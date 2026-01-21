@@ -1040,20 +1040,20 @@
         nodes.genBtn.onclick = async () => {
             const key = localStorage.getItem('mydealz_gemini_key');
             const model = nodes.modelSelect.value;
-            const prompt = out.value;
+            const prompt = out.innerText; // FIX: innerText
 
             if(!key || !model) return alert("Setup unvollständig!");
 
             nodes.genBtn.textContent = "🧠 Arbeite...";
             nodes.genBtn.disabled = true;
-            out.disabled = true;
+            out.contentEditable = "false"; // FIX: contentEditable
 
             try {
                 const summary = await generateWithGemini(key, model, prompt);
                 
                 // Show Result
                 const sep = "\n\n" + "=".repeat(40) + "\n\n";
-                out.value = "🤖 GENERIERTE ZUSAMMENFASSUNG:\n" + sep + summary + sep + "ORIGINAL PROMPT:\n" + prompt;
+                out.innerText = "🤖 GENERIERTE ZUSAMMENFASSUNG:\n" + sep + summary + sep + "ORIGINAL PROMPT:\n" + prompt; // FIX: innerText
                 
                 showToast("✅ Generierung abgeschlossen!");
             } catch(e) {
@@ -1066,7 +1066,7 @@
             } finally {
                 nodes.genBtn.textContent = "✨ ZUSAMMENFASSEN";
                 nodes.genBtn.disabled = false;
-                out.disabled = false;
+                out.contentEditable = "true"; // FIX: contentEditable
             }
         };
 
@@ -1115,22 +1115,20 @@
         };
 
         // Initial Update
-        out.value = PROMPT_LEVELS[state.currentPromptLevel].gen(state.metaData, state.collectedRoots);
-        updateTokenMeter(out.value);
+        out.innerText = PROMPT_LEVELS[state.currentPromptLevel].gen(state.metaData, state.collectedRoots); // FIX: innerText
+        updateTokenMeter(out.innerText); // FIX: innerText
 
-        // Update on prompt change (re-hooking the buttons logic is needed since we replaced "onclick" earlier? 
-        // No, I am just adding this function call to the existing onclick handlers I defined previously in the HTML string? 
-        // Wait, I defined onclick in JS loop. I need to modify that JS loop to call updateTokenMeter.
-        // I will do it by overriding the buttons' onclick here or ensuring the prev loop calls it.
-        // Since I cannot edit the prev loop easily without re-writing the whole block, I will re-iterate.
-        
+        // Update on prompt change
         d.querySelectorAll('.tab-btn').forEach(btn => {
              const oldClick = btn.onclick;
              btn.onclick = (e) => {
                  if(oldClick) oldClick(e);
-                 updateTokenMeter(out.value);
+                 updateTokenMeter(out.innerText); // FIX: innerText
              };
         });
+        
+        // Live Token Update on input
+        out.addEventListener('input', () => updateTokenMeter(out.innerText));
 
     }
 
