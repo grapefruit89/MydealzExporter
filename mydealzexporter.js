@@ -856,7 +856,7 @@
                              <input type="password" id="apiKeyInput" placeholder="API Key..." 
                                     style="flex: 1; padding: 6px; border: 1px solid #CBD5E1; border-radius: 6px; font-family: monospace; font-size:12px;">
                              <button class="btn" id="checkApiBtn" title="Prüfen">➔</button>
-                             <a href="https://aistudio.google.com/app/apikey" target="_blank" class="btn" style="width:auto; padding:0 8px;">🔑</a>
+                             <a href="https://aistudio.google.com/app/apikey" target="_blank" style="font-size:10px; text-decoration:none; color:#2563EB; font-weight:600; white-space:nowrap; margin-left:4px;">KEY HOLEN</a>
                          </div>
 
                          <!-- Ready State -->
@@ -969,7 +969,7 @@
                 nodes.ready.style.display = 'flex';
                 nodes.changeLink.style.display = 'block';
             } else {
-                nodes.auth.style.display = 'block';
+                nodes.auth.style.display = 'flex'; // FIX: Flex instead of block
                 nodes.ready.style.display = 'none';
                 nodes.changeLink.style.display = 'none';
                 // Reset
