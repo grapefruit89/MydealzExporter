@@ -1,0 +1,13 @@
+# 1. Deinen Key hier einfügen
+$Key = "AIzaSyCh3kD9uc-xVUSrwnZXDWRSpFpkIu2mrhY"
+
+# 2. Modelle abrufen
+try {
+    $res = Invoke-RestMethod "https://generativelanguage.googleapis.com/v1beta/models?key=$Key"
+    Write-Host "`n✅ Key ist gültig! Verfügbare Modelle:" -ForegroundColor Green
+    $res.models | Where-Object { $_.supportedGenerationMethods -contains "generateContent" } | 
+        Select-Object @{N='Modell';E={$_.name.Replace('models/','')}}, version, inputTokenLimit | Format-Table -AutoSize
+} catch {
+    Write-Host "`n❌ Fehler: Key ungültig oder blockiert." -ForegroundColor Red
+    Write-Host $_.Exception.Message -ForegroundColor Yellow
+}

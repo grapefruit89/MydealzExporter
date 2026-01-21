@@ -1,0 +1,237 @@
+:root {
+  --bg: #f8fafc;
+  --surface: #ffffff;
+  --border: #e2e8f0;
+  --primary: #0f172a;
+  --text: #1e293b;
+}
+body {
+  margin: 0;
+  padding: 0;
+  font-family: "Inter", system-ui, sans-serif;
+  background: var(--bg);
+  height: 100vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.header {
+  flex: 0 0 auto;
+  padding: 12px 20px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.header h2 {
+  margin: 0;
+  font-size: 16px;
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.badge {
+  background: #eef2ff;
+  color: #4f46e5;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+}
+
+.meta-bar {
+  flex: 0 0 auto;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+  padding: 12px 20px;
+  background: #f1f5f9;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+  color: #64748b;
+}
+.meta-item b {
+  color: #334155;
+  font-weight: 600;
+  margin-right: 4px;
+}
+.meta-item.cache-info {
+  color: #059669;
+  font-weight: 500;
+}
+
+.controls-area {
+  flex: 0 0 auto;
+  padding: 16px 20px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+  z-index: 10;
+}
+
+.tabs {
+  display: flex;
+  gap: 8px;
+}
+.tab-btn {
+  padding: 6px 12px;
+  border-radius: 6px;
+  border: 1px solid #cbd5e1;
+  cursor: pointer;
+  background: white;
+  color: #64748b;
+  font-weight: 500;
+  font-size: 12px;
+}
+.tab-btn.active {
+  background: #f1f5f9;
+  border-color: var(--primary);
+  color: var(--primary);
+  font-weight: 600;
+}
+
+.action-row {
+  display: flex;
+  gap: 40px;
+  flex-wrap: wrap;
+}
+.group-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  color: #94a3b8;
+  font-weight: 700;
+  margin-bottom: 6px;
+}
+.btn-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.btn {
+  min-width: 90px;
+  justify-content: center;
+  padding: 6px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: white;
+  color: #475569;
+  font-size: 12px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.2s;
+}
+.btn:hover {
+  background: #f8fafc;
+  border-color: #cbd5e1;
+}
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.btn-primary {
+  background: var(--primary);
+  color: white;
+  border-color: var(--primary);
+}
+.btn-primary:hover {
+  background: #334155;
+}
+.btn-ai {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border: none;
+}
+.btn-ai:hover {
+  opacity: 0.9;
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.6;
+  }
+}
+.btn.loading {
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+.toast {
+  position: fixed;
+  bottom: 30px;
+  left: 50%;
+  transform: translateX(-50%) translateY(20px);
+  background: rgba(15, 23, 42, 0.95);
+  color: white;
+  padding: 12px 24px;
+  border-radius: 30px;
+  font-size: 13px;
+  font-weight: 500;
+  opacity: 0;
+  transition: all 0.3s ease;
+  pointer-events: none;
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  z-index: 1000;
+  max-width: 500px;
+}
+.toast.visible {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+.main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  min-height: 0;
+}
+
+#aiOutput {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+textarea {
+  flex: 1;
+  width: 100%;
+  resize: none;
+  border: none;
+  padding: 20px;
+  font-family: "JetBrains Mono", "Courier New", monospace;
+  font-size: 12px;
+  background: #fafafa;
+  color: #334155;
+  outline: none;
+  box-sizing: border-box;
+  overflow-y: auto;
+  line-height: 1.6;
+}
+
+.ai-result {
+  background: linear-gradient(135deg, #667eea15 0%, #764ba215 100%);
+  border-left: 3px solid #667eea;
+  padding: 16px 20px;
+  margin: 20px;
+  border-radius: 8px;
+  font-family: "Inter", system-ui;
+  font-size: 13px;
+  color: #334155;
+  line-height: 1.8;
+  white-space: pre-wrap;
+  max-height: calc(100vh - 280px);
+  overflow: auto;
+}
