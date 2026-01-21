@@ -7,8 +7,12 @@
 // @match        https://www.mydealz.de/deals/*
 // @match        https://www.mydealz.de/gutscheine/*
 // @icon         https://www.mydealz.de/favicon.svg
+// @icon         https://www.mydealz.de/favicon.svg
+// @require      https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.0.8/purify.min.js
+// @connect      generativelanguage.googleapis.com
 // @grant        GM_addStyle
 // @grant        GM_setClipboard
+// @grant        GM_xmlhttpRequest
 // @grant        unsafeWindow
 // ==/UserScript==
 
@@ -115,49 +119,84 @@
     }
 
     // ==========================================
-    // 3.X GEMINI API HELPERS
+    // 3.X GM FETCH (CORS FIX) & GEMINI API
     // ==========================================
+    function gmFetch(url, options = {}) {
+        return new Promise((resolve, reject) => {
+            GM_xmlhttpRequest({
+                method: options.method || 'GET',
+                url: url,
+                headers: options.headers || {},
+                data: options.body,
+                onload: (res) => {
+                    resolve({
+                        ok: res.status >= 200 && res.status < 300,
+                        status: res.status,
+                        statusText: res.statusText,
+                        json: () => Promise.resolve(JSON.parse(res.responseText)),
+                        text: () => Promise.resolve(res.responseText)
+                    });
+                },
+                onerror: reject,
+                ontimeout: reject
+            });
+        });
+    }
+
     async function fetchModels(key) {
         try {
-            const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${key}`);
+            // Updated to use gmFetch for CORS
+            const res = await gmFetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${key}`);
             if(!res.ok) throw new Error("API Check Failed (HTTP " + res.status + ")");
             const json = await res.json();
             if(!json.models) throw new Error("Keine Modelle gefunden");
             
-            // Filter & Sort
+            // --- SMART FILTER LOGIC (v14) ---
+            const blacklist = ['tts', 'speech', 'embedding', 'vision', 'aqa', 'nano', 'banana', 'robotics', 'computer-use', 'gemma'];
+
             return json.models
                 .filter(m => {
                     const id = m.name.toLowerCase();
-                    // Must be generateContent capable
                     if(!m.supportedGenerationMethods?.includes("generateContent")) return false;
-                    // sensible whitelist/blacklist
-                    // sensible whitelist/blacklist
-                    if(id.includes('vision') || id.includes('embedding') || id.includes('tts') || id.includes('aqa')) return false;
-                    // Strict Flash Only as requested
-                    if(id.includes('image') || id.includes('banana') || id.includes('nano')) return false;
-                    if(id.includes('pro') || id.includes('lite')) return false;
-                    
-                    // Allow Flash variants
-                    return id.includes('flash');
+                    if(blacklist.some(bad => id.includes(bad))) return false;
+                    return id.includes('gemini');
                 })
-                .sort((a,b) => {
-                    // Flash first
-                    const aF = a.name.includes('flash');
-                    const bF = b.name.includes('flash');
-                    if(aF && !bF) return -1;
-                    if(!aF && bF) return 1;
-                    return 0; // Keep API order otherwise
-                });
+                .sort((a, b) => {
+                    const nameA = a.name.toLowerCase();
+                    const nameB = b.name.toLowerCase();
 
-        } catch(e) {
-            console.error(e);
-            throw e;
-        }
+                    const getVer = (n) => {
+                        const match = n.match(/(\d+\.\d+|\d+)/);
+                        return match ? parseFloat(match[0]) : 0;
+                    };
+                    const verA = getVer(nameA);
+                    const verB = getVer(nameB);
+
+                    // 1. Flash Priority
+                    const isFlashA = nameA.includes('flash');
+                    const isFlashB = nameB.includes('flash');
+                    if (isFlashA && !isFlashB) return -1;
+                    if (!isFlashA && isFlashB) return 1;
+
+                    // 2. Version Desc
+                    if (verA > verB) return -1;
+                    if (verA < verB) return 1;
+
+                    // 3. Stable > Exp
+                    const isExpA = nameA.includes('exp') || nameA.includes('preview');
+                    const isExpB = nameB.includes('exp') || nameB.includes('preview');
+                    if (isExpA && !isExpB) return 1; 
+                    if (!isExpA && isExpB) return -1;
+
+                    return 0;
+                });
+        } catch(e) { console.error(e); throw e; }
     }
 
     async function generateWithGemini(key, model, text) {
         const url = `https://generativelanguage.googleapis.com/v1beta/${model}:generateContent?key=${key}`;
-        const res = await fetch(url, {
+        // Updated to use gmFetch for CORS
+        const res = await gmFetch(url, {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({
@@ -174,8 +213,12 @@
 
     function cleanText(html) {
         if (!html) return "";
+        // v14 Security: Sanitize first
+        // @ts-ignore
+        const clean = DOMPurify.sanitize(html); 
+        
         const parser = new DOMParser();
-        const doc = parser.parseFromString(html, 'text/html');
+        const doc = parser.parseFromString(clean, 'text/html');
         
         // Extract Links: Convert <a href="...">text</a> to [text](url)
         doc.querySelectorAll('a').forEach(a => {
@@ -197,65 +240,37 @@
     // ==========================================
     // 3.1 CACHE MANAGER (IndexedDB)
     // ==========================================
+    // ==========================================
+    // 3.1 CACHE MANAGER (LocalStorage)
+    // ==========================================
     const CacheManager = {
-        DB_NAME: 'MyDealzExportCache_v2', // Changed name to force fresh DB
-        STORE_NAME: 'threads',
-        
-        async init() {
-            return new Promise((resolve, reject) => {
-                const request = indexedDB.open(this.DB_NAME, 1);
-                request.onerror = () => reject(request.error);
-                request.onsuccess = () => resolve(request.result);
-                request.onupgradeneeded = (e) => {
-                    const db = e.target.result;
-                    if (!db.objectStoreNames.contains(this.STORE_NAME)) {
-                        const store = db.createObjectStore(this.STORE_NAME, { keyPath: 'threadId' });
-                        store.createIndex('timestamp', 'timestamp', { unique: false });
-                    }
-                };
-            });
-        },
-        
+        getKey(threadId) { return `mydealz_cache_v2_${threadId}`; },
+
         async get(threadId) {
             try {
-                const db = await this.init();
-                return new Promise((resolve, reject) => {
-                    const tx = db.transaction(this.STORE_NAME, 'readonly');
-                    const store = tx.objectStore(this.STORE_NAME);
-                    const request = store.get(threadId);
-                    
-                    request.onsuccess = () => {
-                        const data = request.result;
-                        // Cache Valid for 1 Hour
-                        if (data && Date.now() - data.timestamp < 60 * 60 * 1000) {
-                            resolve(data);
-                        } else {
-                        resolve(null);
-                        }
-                    };
-                    request.onerror = () => reject(request.error);
-                });
-            } catch (e) { console.error("Cache Error", e); return null; }
+                const raw = localStorage.getItem(this.getKey(threadId));
+                if (!raw) return null;
+                const data = JSON.parse(raw);
+                // Cache Valid for 1 Hour
+                if (Date.now() - data.timestamp < 60 * 60 * 1000) {
+                    return data;
+                }
+                return null;
+            } catch (e) { return null; }
         },
         
         async set(threadId, meta, comments) {
             try {
-                const db = await this.init();
-                return new Promise((resolve, reject) => {
-                    const tx = db.transaction(this.STORE_NAME, 'readwrite');
-                    const store = tx.objectStore(this.STORE_NAME);
-                    const data = { threadId, meta, comments, timestamp: Date.now() };
-                    const request = store.put(data);
-                    request.onsuccess = () => resolve(data);
-                    request.onerror = () => reject(request.error);
-                });
-            } catch (e) { console.error("Cache Write Error", e); }
+                const data = { threadId, meta, comments, timestamp: Date.now() };
+                localStorage.setItem(this.getKey(threadId), JSON.stringify(data));
+            } catch (e) { 
+                console.error("Cache Full?", e);
+                // Optional: Clear old items if needed, but for now just warn
+            }
         },
 
         async delete(threadId) {
-             const db = await this.init();
-             const tx = db.transaction(this.STORE_NAME, 'readwrite');
-             await tx.objectStore(this.STORE_NAME).delete(threadId);
+            localStorage.removeItem(this.getKey(threadId));
         }
     };
 
@@ -800,10 +815,11 @@
                 display: flex; gap: 8px; align-items: center;
             }
 
-            /* Content Editable Editor */
+            /* Textarea Editor (v14 Performance) */
             .editor {
                 flex: 1; 
                 width: 100%; 
+                resize: none;
                 outline: none; 
                 border: none;
                 padding: 20px; 
@@ -812,8 +828,6 @@
                 line-height: 1.5;
                 background: #FAFAFA; 
                 color: #334155; 
-                overflow-y: auto; /* Scroll internally */
-                white-space: pre-wrap; 
                 box-sizing: border-box;
             }
             .editor:focus { background: #fff; }
@@ -902,19 +916,14 @@
             </div>
 
             <div class="main">
-                 <div id="output" class="editor" contenteditable="true" spellcheck="false"></div>
+                 <textarea id="output" class="editor" spellcheck="false"></textarea>
             </div>
             <div id="toast" class="toast"></div>
         `;
 
         const out = d.getElementById('output');
         
-        // PASTE HANDLER: Plain text only
-        out.addEventListener('paste', (e) => {
-            e.preventDefault();
-            const text = (e.clipboardData || window.clipboardData).getData('text');
-            document.execCommand('insertText', false, text);
-        });
+        // No Paste Handler needed for Textarea (native is fast)
 
         const tabContainer = d.getElementById('tabContainer');
 
@@ -943,12 +952,10 @@
             setTimeout(() => toast.classList.remove('visible'), 2000);
         };
 
-        d.getElementById('copyBtn').onclick = async function(e) { 
+        d.getElementById('copyBtn').onclick = function(e) { 
             e.preventDefault(); 
-            try {
-                await navigator.clipboard.writeText(out.innerText);
-                showToast("✅ Erfolgreich kopiert!");
-            } catch(e) { /* fallback omitted for brevity */ }
+            GM_setClipboard(out.value, 'text');
+            showToast("✅ Copied to Clipboard!");
         };
 
         // Export State
@@ -1069,20 +1076,20 @@
         nodes.genBtn.onclick = async () => {
             const key = localStorage.getItem('mydealz_gemini_key');
             const model = nodes.modelSelect.value;
-            const prompt = out.innerText; // FIX: innerText
+            const prompt = out.value; // FIX: innerText -> value for textarea
 
             if(!key || !model) return alert("Setup unvollständig!");
 
             nodes.genBtn.textContent = "🧠 Arbeite...";
             nodes.genBtn.disabled = true;
-            out.contentEditable = "false"; // FIX: contentEditable
+            out.disabled = true; // Textarea uses disabled
 
             try {
                 const summary = await generateWithGemini(key, model, prompt);
                 
                 // Show Result
                 const sep = "\n\n" + "=".repeat(40) + "\n\n";
-                out.innerText = "🤖 GENERIERTE ZUSAMMENFASSUNG:\n" + sep + summary + sep + "ORIGINAL PROMPT:\n" + prompt; // FIX: innerText
+                out.value = "🤖 GENERIERTE ZUSAMMENFASSUNG:\n" + sep + summary + sep + "ORIGINAL PROMPT:\n" + prompt; // Value for textarea
                 
                 showToast("✅ Generierung abgeschlossen!");
             } catch(e) {
@@ -1095,7 +1102,7 @@
             } finally {
                 nodes.genBtn.textContent = "✨ ZUSAMMENFASSEN";
                 nodes.genBtn.disabled = false;
-                out.contentEditable = "true"; // FIX: contentEditable
+                out.disabled = false;
             }
         };
 
@@ -1144,26 +1151,34 @@
         };
 
         // Initial Update
-        out.innerText = PROMPT_LEVELS[state.currentPromptLevel].gen(state.metaData, state.collectedRoots); // FIX: innerText
-        updateTokenMeter(out.innerText); // FIX: innerText
+        out.value = PROMPT_LEVELS[state.currentPromptLevel].gen(state.metaData, state.collectedRoots); 
+        updateTokenMeter(out.value); 
 
         // Update on prompt change
         d.querySelectorAll('.tab-btn').forEach(btn => {
              const oldClick = btn.onclick;
              btn.onclick = (e) => {
                  if(oldClick) oldClick(e);
-                 updateTokenMeter(out.innerText); // FIX: innerText
+                 updateTokenMeter(out.value); 
              };
         });
         
         // Live Token Update on input
-        out.addEventListener('input', () => updateTokenMeter(out.innerText));
+        out.addEventListener('input', () => updateTokenMeter(out.value));
 
     }
 
+    // ==========================================
+    // WATCHDOG INIT (SPA SUPPORT)
+    // ==========================================
     function init() {
+        if(document.getElementById('mydealz-ai-btn')) return; // Already exists
+
+        // Only on deals/discussions
+        if(!location.href.includes('/deals/') && !location.href.includes('/diskussion/') && !location.href.includes('/gutscheine/')) return;
+
         const btn = document.createElement('button');
-        btn.id = 'mydealz-ai-btn'; // ID for reference
+        btn.id = 'mydealz-ai-btn';
         btn.textContent = "🧠 AI Export";
         Object.assign(btn.style, {
             position: 'fixed', bottom: '20px', right: '20px', zIndex: 99999,
@@ -1175,7 +1190,7 @@
         document.body.appendChild(btn);
     }
     
-    if (document.readyState === 'complete') init();
-    else window.addEventListener('load', init);
+    // Watchdog instead of onload
+    setInterval(init, 1000); 
 
 })();
