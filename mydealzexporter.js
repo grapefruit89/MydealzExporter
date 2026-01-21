@@ -70,15 +70,15 @@
         },
         SHORT: {
             label: '⚡ Kurz',
-            gen: (meta, comments) => `# Context\n${fmtMeta(meta)}\n\n# Comments\n${formatComments(comments)}`
+            gen: (meta, comments) => `# SYSTEM: Erstelle eine KURZE Zusammenfassung. Erfasse den Kern der Diskussion, sowie Pro & Contra Argumente und die physischen Produktdaten.\n\n# METADATA\n${fmtMeta(meta)}\n\n# COMMENTS\n${formatComments(comments)}`
         },
         MEDIUM: {
             label: '💡 Standard',
-            gen: (meta, comments) => `# Role: Community Sentiment Analyst\n\n# Metadata\n${fmtMeta(meta)}\n\n# Thread Structure (Nested)\n${formatComments(comments)}\n\n# Task\nAnalyse the sentiment and extract key facts.`
+            gen: (meta, comments) => `# SYSTEM: Erstelle eine standardmäßige, längere Zusammenfassung. Gehe besonders auf ALTERNATIVEN ein, die in der Diskussion genannt werden.\n\n# METADATA\n${fmtMeta(meta)}\n\n# COMMENTS\n${formatComments(comments)}`
         },
         DETAILED: {
             label: '🧐 Ausführlich',
-            gen: (meta, comments) => `# Role: UX Researcher\n\n# Metadata\n${fmtMeta(meta)}\n\n# Deep Dive Thread\n${formatComments(comments)}\n\n# Protocol\nAnalyze interactions between parents and replies.`
+            gen: (meta, comments) => `# SYSTEM: Erstelle eine sehr ausführliche Zusammenfassung. Fülle Lücken (Gaps) und suche gezielt nach Informationen, die typischerweise übersehen werden.\n\n# METADATA\n${fmtMeta(meta)}\n\n# COMMENTS\n${formatComments(comments)}`
         }
     };
 
@@ -112,6 +112,39 @@
         const v = `; ${document.cookie}`;
         const p = v.split(`; ${name}=`);
         if (p.length === 2) return p.pop().split(';').shift();
+    }
+
+    // ==========================================
+    // 3.X GEMINI API HELPERS
+    // ==========================================
+    async function fetchModels(key) {
+        try {
+            const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${key}`);
+            if(!res.ok) throw new Error("API Check Failed (HTTP " + res.status + ")");
+            const json = await res.json();
+            if(!json.models) throw new Error("Keine Modelle gefunden");
+            return json.models.filter(m => m.supportedGenerationMethods && m.supportedGenerationMethods.includes("generateContent"));
+        } catch(e) {
+            console.error(e);
+            throw e;
+        }
+    }
+
+    async function generateWithGemini(key, model, text) {
+        const url = `https://generativelanguage.googleapis.com/v1beta/${model}:generateContent?key=${key}`;
+        const res = await fetch(url, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                contents: [{ parts: [{ text: text }] }]
+            })
+        });
+        if(!res.ok) {
+            const err = await res.json();
+            throw new Error(err.error?.message || "Gen Failed");
+        }
+        const json = await res.json();
+        return json.candidates?.[0]?.content?.parts?.[0]?.text || "Keine Antwort erhalten.";
     }
 
     function cleanText(html) {
@@ -704,12 +737,31 @@
 
             <div class="controls-area">
                 
+                <!-- API Section -->
+                <div class="api-section" style="margin-bottom: 20px; padding-bottom: 15px; border-bottom: 1px solid #E2E8F0;">
+                     <div class="group-label" style="display:flex; justify-content:space-between;">
+                        <span>🧠 Gemini API Setup</span>
+                        <a href="https://aistudio.google.com/app/apikey" target="_blank" style="text-decoration:none; color:#2563EB;">Get Key ↗</a>
+                     </div>
+                     <div style="display: flex; gap: 8px; margin-top: 8px;">
+                         <input type="password" id="apiKeyInput" placeholder="API Key hier einfügen..." 
+                                style="flex: 1; padding: 8px; border: 1px solid #CBD5E1; border-radius: 6px; font-family: monospace;">
+                         <button class="btn" id="checkApiBtn">✅ Check</button>
+                     </div>
+                     <div style="display: flex; gap: 8px; margin-top: 8px;">
+                         <select id="modelSelect" style="flex: 1; padding: 8px; border: 1px solid #CBD5E1; border-radius: 6px; background:white;" disabled>
+                             <option value="">Warte auf Key...</option>
+                         </select>
+                         <button class="btn btn-primary" id="generateBtn" disabled style="min-width: 140px;">✨ ZUSAMMENFASSEN</button>
+                     </div>
+                </div>
+
                 <div>
-                     <div class="group-label">Prompts</div>
+                     <div class="group-label">Prompts (Preview)</div>
                      <div class="tabs" id="tabContainer"></div>
                 </div>
                 
-                <div class="action-row">
+                <div class="action-row" style="margin-top: 15px;">
                      <div>
                         <div class="group-label">Exportieren</div>
                         <div class="btn-row">
@@ -790,6 +842,87 @@
                  w.close();
                  if(w.UnsafeRunExport) w.UnsafeRunExport();
              }
+        };
+
+        // ============================
+        // API LOGIC
+        // ============================
+        const keyInput = d.getElementById('apiKeyInput');
+        const modelSelect = d.getElementById('modelSelect');
+        const checkBtn = d.getElementById('checkApiBtn');
+        const genBtn = d.getElementById('generateBtn');
+
+        // Allow click on disabled generate to prompt user
+        // (Not really needed if we control the flow)
+
+        // Load Key
+        const savedKey = localStorage.getItem('mydealz_gemini_key');
+        if(savedKey) {
+            keyInput.value = savedKey;
+            // Auto-Check? Let's just restore it visually, user clicks check to be safe or we can auto-trigger
+            // Auto-triggering might be nice
+            setTimeout(() => checkBtn.click(), 100); 
+        }
+
+        checkBtn.onclick = async () => {
+            const key = keyInput.value.trim();
+            if(!key) return alert("❌ Bitte API Key eingeben!");
+            
+            checkBtn.textContent = "⏳...";
+            checkBtn.disabled = true;
+            keyInput.disabled = true;
+
+            try {
+                const models = await fetchModels(key);
+                // Success
+                localStorage.setItem('mydealz_gemini_key', key);
+                
+                // Populate Select
+                modelSelect.innerHTML = models.map(m => {
+                    // Try to pre-select gemini-1.5-flash or flash-latest
+                    const isFlash = m.name.includes("flash");
+                    return `<option value="${m.name}" ${isFlash ? 'selected' : ''}>${m.displayName || m.name}</option>`;
+                }).join('');
+                
+                modelSelect.disabled = false;
+                genBtn.disabled = false;
+                checkBtn.textContent = "✅";
+                keyInput.disabled = false;
+                
+            } catch(e) {
+                alert("Fehler beim Prüfen des Keys: " + e.message);
+                checkBtn.textContent = "❌ Retry";
+                keyInput.disabled = false;
+                checkBtn.disabled = false;
+            }
+        };
+
+        genBtn.onclick = async () => {
+            const key = keyInput.value.trim();
+            const model = modelSelect.value;
+            const prompt = out.value;
+
+            if(!key || !model) return alert("Setup unvollständig!");
+
+            genBtn.textContent = "🧠 Arbeite...";
+            genBtn.disabled = true;
+            out.disabled = true;
+
+            try {
+                const summary = await generateWithGemini(key, model, prompt);
+                
+                // Show Result
+                const sep = "\n\n" + "=".repeat(40) + "\n\n";
+                out.value = "🤖 GENERIERTE ZUSAMMENFASSUNG:\n" + sep + summary + sep + "ORIGINAL PROMPT:\n" + prompt;
+                
+                showToast("✅ Generierung abgeschlossen!");
+            } catch(e) {
+                alert("Fehler: " + e.message);
+            } finally {
+                genBtn.textContent = "✨ ZUSAMMENFASSEN";
+                genBtn.disabled = false;
+                out.disabled = false;
+            }
         };
 
         out.value = PROMPT_LEVELS[state.currentPromptLevel].gen(state.metaData, state.collectedRoots);
