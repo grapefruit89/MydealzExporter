@@ -131,7 +131,10 @@
                     // Must be generateContent capable
                     if(!m.supportedGenerationMethods?.includes("generateContent")) return false;
                     // sensible whitelist/blacklist
+                    // sensible whitelist/blacklist
                     if(id.includes('vision') || id.includes('embedding') || id.includes('tts') || id.includes('aqa')) return false;
+                    // Exclude Image/Banana/Nano models
+                    if(id.includes('image') || id.includes('banana') || id.includes('nano')) return false;
                     // User wants "sensible" models for text -> Flash, Pro, Ultra, Exp
                     return id.includes('flash') || id.includes('pro') || id.includes('ultra') || id.includes('exp');
                 })
@@ -682,15 +685,26 @@
             .meta-item b { color: #334155; font-weight: 600; margin-right: 4px; }
             .meta-item.cache-info { color: #059669; font-weight: 500; }
 
-            /* Controls Area (Tabs + Actions) */
+            /* Controls Area (Apps-Like Layout) */
             .controls-area {
                 flex: 0 0 auto;
                 padding: 16px 20px;
                 background: var(--surface);
                 border-bottom: 1px solid var(--border);
-                display: flex; flex-direction: column; gap: 16px;
+                display: flex; flex-direction: column; gap: 15px;
                 box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);
                 z-index: 10;
+            }
+
+            .grid-row {
+                display: grid; 
+                grid-template-columns: 1fr 1fr; 
+                gap: 20px;
+                align-items: end; /* Align bottoms so buttons line up */
+            }
+
+            .panel {
+                display: flex; flex-direction: column; gap: 6px;
             }
 
             .tabs { display: flex; gap: 8px; }
@@ -700,15 +714,15 @@
             }
             .tab-btn.active { background: #F1F5F9; border-color: var(--primary); color: var(--primary); font-weight: 600; }
 
-            .action-row { display: flex; gap: 40px; }
-            .group-label { font-size: 10px; text-transform: uppercase; color: #94A3B8; font-weight: 700; margin-bottom: 6px; }
+            .group-label { font-size: 10px; text-transform: uppercase; color: #94A3B8; font-weight: 700; }
             .btn-row { display: flex; gap: 8px; flex-wrap: wrap; }
             
             .btn {
-                min-width: 90px; justify-content: center;
+                min-width: 80px; justify-content: center;
                 padding: 6px 12px; border-radius: 6px; border: 1px solid var(--border);
                 background: white; color: #475569; font-size: 12px; cursor: pointer;
                 display: flex; align-items: center; gap: 6px;
+                white-space: nowrap;
             }
             
             .toast {
@@ -724,82 +738,13 @@
             .btn-primary { background: var(--primary); color: white; border-color: var(--primary); }
             .btn-primary:hover { background: #334155; }
 
-            /* Output */
-            .main {
-                flex: 1; 
-                display: flex; flex-direction: column;
-                padding: 0; 
-                min-height: 0; 
+            /* Ribbon Tweak */
+            .speedometer-container { margin: 0; margin-bottom: 5px; } 
+
+            .api-controls {
+                display: flex; gap: 8px; align-items: center;
             }
-            textarea {
-                flex: 1; width: 100%; resize: none; border: none;
-                padding: 20px; font-family: 'JetBrains Mono', monospace; font-size: 12px;
-                background: #FAFAFA; color: #334155; outline: none; box-sizing: border-box;
-                overflow-y: auto;
-            }
-            /* Speedometer Ribbon Style */
-            .speedometer-container {
-                position: relative;
-                height: 40px;
-                background: #0f172a;
-                border-radius: 4px;
-                overflow: hidden;
-                margin-top: 10px;
-                margin-bottom: 20px;
-                border: 2px solid #334155;
-                font-family: 'JetBrains Mono', monospace;
-            }
-            .speedometer-ribbon {
-                position: absolute;
-                top: 0; left: 0; bottom: 0;
-                width: 100%;
-                background: linear-gradient(90deg, 
-                    #22c55e 0%,    /* Green (Lite) */
-                    #3b82f6 40%,   /* Blue (Flash) */
-                    #a855f7 100%   /* Purple (Pro) */
-                );
-                opacity: 0.3;
-            }
-            .speedometer-labels {
-                position: absolute;
-                top: 0; left: 0; right: 0; bottom: 0;
-                display: flex;
-                justify-content: space-between;
-                align-items: center;
-                padding: 0 20px;
-                color: rgba(255,255,255,0.5);
-                font-size: 10px;
-                font-weight: bold;
-                pointer-events: none;
-                z-index: 2;
-            }
-            .speedometer-needle {
-                position: absolute;
-                top: 0; bottom: 0; width: 2px;
-                background: #ef4444;
-                box-shadow: 0 0 5px #ef4444;
-                transition: left 0.5s cubic-bezier(0.4, 0, 0.2, 1);
-                z-index: 3;
-            }
-            .speedometer-value {
-                position: absolute;
-                top: 2px; right: 5px;
-                font-size: 10px; color: #fff;
-                z-index: 4;
-                background: rgba(0,0,0,0.5);
-                padding: 2px 4px; border-radius: 3px;
-            }
-            .model-zone {
-                transition: all 0.3s;
-                padding: 2px 6px;
-                border-radius: 4px;
-            }
-            .model-zone.active {
-                background: rgba(255,255,255,0.2);
-                color: #fff;
-                text-shadow: 0 0 5px currentColor;
-            }
-        `;
+            `;
 
         d.head.innerHTML = `<style>${css}</style>`;
         d.body.innerHTML = `
@@ -819,39 +764,7 @@
 
             <div class="controls-area">
                 
-                <!-- API Section -->
-                <div class="api-section" style="margin-bottom: 20px; padding-bottom: 15px; border-bottom: 1px solid #E2E8F0;">
-                     <div class="group-label" style="display:flex; justify-content:space-between; align-items:center;">
-                        <span>🧠 Gemini AI</span>
-                        <a href="#" id="changeKeyLink" style="display:none; text-decoration:none; color:#64748B; font-size:10px;">KEY ÄNDERN</a>
-                     </div>
-                     
-                     <!-- STATE: NO KEY -->
-                     <div id="authContainer" style="margin-top: 8px;">
-                        <div style="display: flex; gap: 8px;">
-                             <input type="password" id="apiKeyInput" placeholder="API Key hier einfügen..." 
-                                    style="flex: 1; padding: 8px; border: 1px solid #CBD5E1; border-radius: 6px; font-family: monospace;">
-                             <button class="btn" id="checkApiBtn">➔</button>
-                        </div>
-                        <div style="margin-top:4px; text-align:right;">
-                            <a href="https://aistudio.google.com/app/apikey" target="_blank" style="text-decoration:none; color:#2563EB; font-size:10px;">Get API Key ↗</a>
-                        </div>
-                     </div>
-
-                     <!-- STATE: READY -->
-                     <div id="readyContainer" style="display: none; gap: 8px; margin-top: 8px;">
-                         <select id="modelSelect" style="flex: 1; padding: 8px; border: 1px solid #CBD5E1; border-radius: 6px; background:white; font-size:12px;">
-                         </select>
-                         <button class="btn btn-primary" id="generateBtn" style="min-width: 140px;">✨ ZUSAMMENFASSEN</button>
-                     </div>
-                </div>
-
-                <div>
-                     <div class="group-label">Prompts (Preview)</div>
-                     <div class="tabs" id="tabContainer"></div>
-                </div>
-
-                <!-- Ribbon Speedometer -->
+                <!-- 1. Speedometer Top -->
                 <div class="speedometer-container" title="Geschätzte Token-Last">
                     <div class="speedometer-ribbon"></div>
                     <div class="speedometer-labels">
@@ -862,9 +775,40 @@
                     <div class="speedometer-needle" id="tokenNeedle" style="left: 0%"></div>
                     <div class="speedometer-value" id="tokenValue">0 Tokens</div>
                 </div>
+
+                <!-- 2. Row 1: Prompts | Gemini -->
+                <div class="grid-row">
+                    <div class="panel">
+                         <div class="group-label">Prompts (Preview)</div>
+                         <div class="tabs" id="tabContainer"></div>
+                    </div>
+
+                    <div class="panel">
+                         <div class="group-label" style="display:flex; justify-content:space-between; align-items:center;">
+                            <span>🧠 Gemini AI</span>
+                            <a href="#" id="changeKeyLink" style="display:none; text-decoration:none; color:#64748B; font-size:10px;">KEY ÄNDERN</a>
+                         </div>
+                         
+                         <!-- Auth State -->
+                         <div id="authContainer" class="api-controls">
+                             <input type="password" id="apiKeyInput" placeholder="API Key..." 
+                                    style="flex: 1; padding: 6px; border: 1px solid #CBD5E1; border-radius: 6px; font-family: monospace; font-size:12px;">
+                             <button class="btn" id="checkApiBtn" title="Prüfen">➔</button>
+                             <a href="https://aistudio.google.com/app/apikey" target="_blank" class="btn" style="width:auto; padding:0 8px;">🔑</a>
+                         </div>
+
+                         <!-- Ready State -->
+                         <div id="readyContainer" class="api-controls" style="display:none;">
+                             <select id="modelSelect" style="flex: 1; padding: 6px; border: 1px solid #CBD5E1; border-radius: 6px; background:white; font-size:12px; max-width: 180px;">
+                             </select>
+                             <button class="btn btn-primary" id="generateBtn">✨ SUMMARY</button>
+                         </div>
+                    </div>
+                </div>
                 
-                <div class="action-row" style="margin-top: 5px;">
-                     <div>
+                <!-- 3. Row 2: Export | Links -->
+                <div class="grid-row">
+                     <div class="panel">
                         <div class="group-label">Exportieren</div>
                         <div class="btn-row">
                             <button class="btn" id="copyBtn">📋 Copy</button>
@@ -873,7 +817,7 @@
                             <button class="btn" id="refreshBtn" title="Cache löschen & Neu laden">🔄</button>
                         </div>
                     </div>
-                    <div>
+                    <div class="panel">
                         <div class="group-label">AI Direktlink</div>
                         <div class="btn-row">
                             ${AI_URLS.map(ai => 
@@ -995,7 +939,7 @@
                 }).join('');
                 
                 switchMode('ready');
-                showToast("✅ API Connected");
+                if(!isAuto) showToast("✅ API Connected");
 
             } catch(e) {
                 console.error(e);
