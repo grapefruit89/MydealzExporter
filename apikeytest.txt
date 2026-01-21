@@ -1,13 +1,77 @@
-# 1. Deinen Key hier einfügen
-$Key = "AIzaSyCh3kD9uc-xVUSrwnZXDWRSpFpkIu2mrhY"
+# --- EINSTELLUNGEN ---
+$Key = "AIzaSyCh3kD9uc-xVUSrwnZXDWRSpFpkIu2mrhY" 
 
-# 2. Modelle abrufen
+# --- HILFSFUNKTIONEN ---
+function Get-Version([string]$name) {
+    if ($name -match "(\d+\.\d+|\d+)") { return [double]$matches[0] }
+    return 0.0
+}
+
+# --- START ---
 try {
+    Write-Host "Verbinde mit Google API..." -ForegroundColor Gray
     $res = Invoke-RestMethod "https://generativelanguage.googleapis.com/v1beta/models?key=$Key"
-    Write-Host "`n✅ Key ist gültig! Verfügbare Modelle:" -ForegroundColor Green
-    $res.models | Where-Object { $_.supportedGenerationMethods -contains "generateContent" } | 
-        Select-Object @{N='Modell';E={$_.name.Replace('models/','')}}, version, inputTokenLimit | Format-Table -AutoSize
+    
+    $shownModels = @()
+    $hiddenModels = @()
+    
+    # 1. FINALER FILTER (v14.2)
+    # Jetzt auch 'lite' und 'image' auf der Blacklist!
+    $blacklist = @('tts', 'speech', 'embedding', 'vision', 'aqa', 'nano', 'banana', 'robotics', 'computer-use', 'gemma', 'lite', 'image')
+
+    foreach ($m in $res.models) {
+        $id = $m.name.Replace('models/', '').ToLower()
+        
+        # A) Muss Content generieren können
+        $isGenContent = $m.supportedGenerationMethods -contains "generateContent"
+        
+        # B) Namens-Check: Gemini ODER Deep-Research
+        $isGemini = $id.Contains("gemini")
+        $isDeepRes = $id.Contains("deep-research")
+        
+        # C) Blacklist Check
+        $isBlacklisted = $false
+        foreach ($b in $blacklist) { if ($id.Contains($b)) { $isBlacklisted = $true; break } }
+
+        # D) Context Check (Alles unter 60k fliegt raus)
+        $hasContext = $m.inputTokenLimit -ge 60000
+
+        # FINAL CHECK
+        if ($isGenContent -and ($isGemini -or $isDeepRes) -and -not $isBlacklisted -and $hasContext) {
+            
+            $ver = Get-Version $id
+            $isFlash = $id.Contains("flash")
+            $isExp = ($id.Contains("exp") -or $id.Contains("preview"))
+            
+            $shownModels += [PSCustomObject]@{
+                ID = $id
+                Limit = $m.inputTokenLimit
+                Version = $ver
+                IsFlash = $isFlash
+                IsExp = $isExp
+            }
+        } else {
+            $reason = "Unbekannt"
+            if (-not $isGenContent) { $reason = "Kein Text-Gen" }
+            elseif ($isBlacklisted) { $reason = "Blacklist ($($blacklist | Where {$id.Contains($_)}))" }
+            elseif (-not ($isGemini -or $isDeepRes)) { $reason = "Kein Gemini" }
+            elseif (-not $hasContext) { $reason = "Zu wenig Context" }
+            
+            $hiddenModels += [PSCustomObject]@{ ID = $id; Reason = $reason }
+        }
+    }
+
+    # 2. SORTIERUNG
+    $finalList = $shownModels | Sort-Object -Property @{E="IsFlash"; Descending=$true}, @{E="Version"; Descending=$true}, @{E="IsExp"; Descending=$false}
+
+    # --- AUSGABE ---
+    Clear-Host
+    Write-Host "✅ DEINE PERFEKTE LISTE (Ohne Lite, Ohne Image):" -ForegroundColor Green
+    $finalList | Select-Object @{N='Modell-ID';E={$_.ID}}, @{N='Tokens';E={$_.Limit}}, @{N='Typ';E={if($_.IsFlash){"⚡ FLASH"}else{"🧠 PRO"}}}, @{N='Status';E={if($_.IsExp){"⚠️ Preview"}else{"✅ Stable"}}} | Format-Table -AutoSize
+
+    Write-Host "`n🗑️ PAPIERKORB (Lite, Image, Müll):" -ForegroundColor Red
+    $hiddenModels | Sort-Object Reason | Format-Table -AutoSize
+
 } catch {
-    Write-Host "`n❌ Fehler: Key ungültig oder blockiert." -ForegroundColor Red
-    Write-Host $_.Exception.Message -ForegroundColor Yellow
+    Write-Host "Fehler: $($_.Exception.Message)" -ForegroundColor Red
 }
