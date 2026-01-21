@@ -123,7 +123,27 @@
             if(!res.ok) throw new Error("API Check Failed (HTTP " + res.status + ")");
             const json = await res.json();
             if(!json.models) throw new Error("Keine Modelle gefunden");
-            return json.models.filter(m => m.supportedGenerationMethods && m.supportedGenerationMethods.includes("generateContent"));
+            
+            // Filter & Sort
+            return json.models
+                .filter(m => {
+                    const id = m.name.toLowerCase();
+                    // Must be generateContent capable
+                    if(!m.supportedGenerationMethods?.includes("generateContent")) return false;
+                    // sensible whitelist/blacklist
+                    if(id.includes('vision') || id.includes('embedding') || id.includes('tts') || id.includes('aqa')) return false;
+                    // User wants "sensible" models for text -> Flash, Pro, Ultra, Exp
+                    return id.includes('flash') || id.includes('pro') || id.includes('ultra') || id.includes('exp');
+                })
+                .sort((a,b) => {
+                    // Flash first
+                    const aF = a.name.includes('flash');
+                    const bF = b.name.includes('flash');
+                    if(aF && !bF) return -1;
+                    if(!aF && bF) return 1;
+                    return 0; // Keep API order otherwise
+                });
+
         } catch(e) {
             console.error(e);
             throw e;
@@ -739,20 +759,28 @@
                 
                 <!-- API Section -->
                 <div class="api-section" style="margin-bottom: 20px; padding-bottom: 15px; border-bottom: 1px solid #E2E8F0;">
-                     <div class="group-label" style="display:flex; justify-content:space-between;">
-                        <span>🧠 Gemini API Setup</span>
-                        <a href="https://aistudio.google.com/app/apikey" target="_blank" style="text-decoration:none; color:#2563EB;">Get Key ↗</a>
+                     <div class="group-label" style="display:flex; justify-content:space-between; align-items:center;">
+                        <span>🧠 Gemini AI</span>
+                        <a href="#" id="changeKeyLink" style="display:none; text-decoration:none; color:#64748B; font-size:10px;">KEY ÄNDERN</a>
                      </div>
-                     <div style="display: flex; gap: 8px; margin-top: 8px;">
-                         <input type="password" id="apiKeyInput" placeholder="API Key hier einfügen..." 
-                                style="flex: 1; padding: 8px; border: 1px solid #CBD5E1; border-radius: 6px; font-family: monospace;">
-                         <button class="btn" id="checkApiBtn">✅ Check</button>
+                     
+                     <!-- STATE: NO KEY -->
+                     <div id="authContainer" style="margin-top: 8px;">
+                        <div style="display: flex; gap: 8px;">
+                             <input type="password" id="apiKeyInput" placeholder="API Key hier einfügen..." 
+                                    style="flex: 1; padding: 8px; border: 1px solid #CBD5E1; border-radius: 6px; font-family: monospace;">
+                             <button class="btn" id="checkApiBtn">➔</button>
+                        </div>
+                        <div style="margin-top:4px; text-align:right;">
+                            <a href="https://aistudio.google.com/app/apikey" target="_blank" style="text-decoration:none; color:#2563EB; font-size:10px;">Get API Key ↗</a>
+                        </div>
                      </div>
-                     <div style="display: flex; gap: 8px; margin-top: 8px;">
-                         <select id="modelSelect" style="flex: 1; padding: 8px; border: 1px solid #CBD5E1; border-radius: 6px; background:white;" disabled>
-                             <option value="">Warte auf Key...</option>
+
+                     <!-- STATE: READY -->
+                     <div id="readyContainer" style="display: none; gap: 8px; margin-top: 8px;">
+                         <select id="modelSelect" style="flex: 1; padding: 8px; border: 1px solid #CBD5E1; border-radius: 6px; background:white; font-size:12px;">
                          </select>
-                         <button class="btn btn-primary" id="generateBtn" disabled style="min-width: 140px;">✨ ZUSAMMENFASSEN</button>
+                         <button class="btn btn-primary" id="generateBtn" style="min-width: 140px;">✨ ZUSAMMENFASSEN</button>
                      </div>
                 </div>
 
@@ -847,65 +875,99 @@
         // ============================
         // API LOGIC
         // ============================
-        const keyInput = d.getElementById('apiKeyInput');
-        const modelSelect = d.getElementById('modelSelect');
-        const checkBtn = d.getElementById('checkApiBtn');
-        const genBtn = d.getElementById('generateBtn');
+        const nodes = {
+            auth: d.getElementById('authContainer'),
+            ready: d.getElementById('readyContainer'),
+            keyInput: d.getElementById('apiKeyInput'),
+            checkBtn: d.getElementById('checkApiBtn'),
+            modelSelect: d.getElementById('modelSelect'),
+            genBtn: d.getElementById('generateBtn'),
+            changeLink: d.getElementById('changeKeyLink')
+        };
 
-        // Allow click on disabled generate to prompt user
-        // (Not really needed if we control the flow)
-
-        // Load Key
-        const savedKey = localStorage.getItem('mydealz_gemini_key');
-        if(savedKey) {
-            keyInput.value = savedKey;
-            // Auto-Check? Let's just restore it visually, user clicks check to be safe or we can auto-trigger
-            // Auto-triggering might be nice
-            setTimeout(() => checkBtn.click(), 100); 
-        }
-
-        checkBtn.onclick = async () => {
-            const key = keyInput.value.trim();
-            if(!key) return alert("❌ Bitte API Key eingeben!");
-            
-            checkBtn.textContent = "⏳...";
-            checkBtn.disabled = true;
-            keyInput.disabled = true;
-
-            try {
-                const models = await fetchModels(key);
-                // Success
-                localStorage.setItem('mydealz_gemini_key', key);
-                
-                // Populate Select
-                modelSelect.innerHTML = models.map(m => {
-                    // Try to pre-select gemini-1.5-flash or flash-latest
-                    const isFlash = m.name.includes("flash");
-                    return `<option value="${m.name}" ${isFlash ? 'selected' : ''}>${m.displayName || m.name}</option>`;
-                }).join('');
-                
-                modelSelect.disabled = false;
-                genBtn.disabled = false;
-                checkBtn.textContent = "✅";
-                keyInput.disabled = false;
-                
-            } catch(e) {
-                alert("Fehler beim Prüfen des Keys: " + e.message);
-                checkBtn.textContent = "❌ Retry";
-                keyInput.disabled = false;
-                checkBtn.disabled = false;
+        const switchMode = (mode) => {
+            if(mode === 'ready') {
+                nodes.auth.style.display = 'none';
+                nodes.ready.style.display = 'flex';
+                nodes.changeLink.style.display = 'block';
+            } else {
+                nodes.auth.style.display = 'block';
+                nodes.ready.style.display = 'none';
+                nodes.changeLink.style.display = 'none';
+                // Reset
+                nodes.checkBtn.textContent = "➔";
+                nodes.checkBtn.disabled = false;
+                nodes.keyInput.disabled = false;
             }
         };
 
-        genBtn.onclick = async () => {
-            const key = keyInput.value.trim();
-            const model = modelSelect.value;
+        const validateKey = async (key, isAuto = false) => {
+            key = key.trim();
+            if(!key) return;
+
+            if(!isAuto) {
+                nodes.checkBtn.textContent = "⏳";
+                nodes.checkBtn.disabled = true;
+                nodes.keyInput.disabled = true;
+            }
+
+            try {
+                const models = await fetchModels(key);
+                localStorage.setItem('mydealz_gemini_key', key);
+                
+                // Populate Filtered Models
+                nodes.modelSelect.innerHTML = models.map(m => {
+                    return `<option value="${m.name}" ${m.name.includes("2.0-flash") ? 'selected' : ''}>${m.displayName || m.name.replace('models/','')}</option>`;
+                }).join('');
+                
+                switchMode('ready');
+                showToast("✅ API Connected");
+
+            } catch(e) {
+                console.error(e);
+                if(!isAuto) {
+                    alert("Key ungültig: " + e.message);
+                    nodes.checkBtn.textContent = "❌";
+                    nodes.checkBtn.disabled = false;
+                    nodes.keyInput.disabled = false;
+                }
+            }
+        };
+
+        // Load Key Check
+        const savedKey = localStorage.getItem('mydealz_gemini_key');
+        if(savedKey) {
+            validateKey(savedKey, true); // Auto check silent
+        }
+
+        // Auto-Check on Paste/Input
+        nodes.keyInput.addEventListener('input', (e) => {
+            const val = e.target.value.trim();
+            if(val.length > 30 && val.startsWith('AIza')) {
+                 validateKey(val, false);
+            }
+        });
+
+        // Manual Check
+        nodes.checkBtn.onclick = () => validateKey(nodes.keyInput.value);
+
+        // Change Key Logic
+        nodes.changeLink.onclick = (e) => {
+            e.preventDefault();
+            localStorage.removeItem('mydealz_gemini_key');
+            nodes.keyInput.value = '';
+            switchMode('auth');
+        };
+
+        nodes.genBtn.onclick = async () => {
+            const key = localStorage.getItem('mydealz_gemini_key');
+            const model = nodes.modelSelect.value;
             const prompt = out.value;
 
             if(!key || !model) return alert("Setup unvollständig!");
 
-            genBtn.textContent = "🧠 Arbeite...";
-            genBtn.disabled = true;
+            nodes.genBtn.textContent = "🧠 Arbeite...";
+            nodes.genBtn.disabled = true;
             out.disabled = true;
 
             try {
@@ -917,10 +979,15 @@
                 
                 showToast("✅ Generierung abgeschlossen!");
             } catch(e) {
-                alert("Fehler: " + e.message);
+                if(e.message.includes("403") || e.message.includes("key")) {
+                     alert("API Key ungültig geworden!");
+                     switchMode('auth');
+                } else {
+                     alert("Fehler: " + e.message);
+                }
             } finally {
-                genBtn.textContent = "✨ ZUSAMMENFASSEN";
-                genBtn.disabled = false;
+                nodes.genBtn.textContent = "✨ ZUSAMMENFASSEN";
+                nodes.genBtn.disabled = false;
                 out.disabled = false;
             }
         };
