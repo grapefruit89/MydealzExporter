@@ -737,6 +737,68 @@
                 background: #FAFAFA; color: #334155; outline: none; box-sizing: border-box;
                 overflow-y: auto;
             }
+            /* Speedometer Ribbon Style */
+            .speedometer-container {
+                position: relative;
+                height: 40px;
+                background: #0f172a;
+                border-radius: 4px;
+                overflow: hidden;
+                margin-top: 10px;
+                margin-bottom: 20px;
+                border: 2px solid #334155;
+                font-family: 'JetBrains Mono', monospace;
+            }
+            .speedometer-ribbon {
+                position: absolute;
+                top: 0; left: 0; bottom: 0;
+                width: 100%;
+                background: linear-gradient(90deg, 
+                    #22c55e 0%,    /* Green (Lite) */
+                    #3b82f6 40%,   /* Blue (Flash) */
+                    #a855f7 100%   /* Purple (Pro) */
+                );
+                opacity: 0.3;
+            }
+            .speedometer-labels {
+                position: absolute;
+                top: 0; left: 0; right: 0; bottom: 0;
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                padding: 0 20px;
+                color: rgba(255,255,255,0.5);
+                font-size: 10px;
+                font-weight: bold;
+                pointer-events: none;
+                z-index: 2;
+            }
+            .speedometer-needle {
+                position: absolute;
+                top: 0; bottom: 0; width: 2px;
+                background: #ef4444;
+                box-shadow: 0 0 5px #ef4444;
+                transition: left 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+                z-index: 3;
+            }
+            .speedometer-value {
+                position: absolute;
+                top: 2px; right: 5px;
+                font-size: 10px; color: #fff;
+                z-index: 4;
+                background: rgba(0,0,0,0.5);
+                padding: 2px 4px; border-radius: 3px;
+            }
+            .model-zone {
+                transition: all 0.3s;
+                padding: 2px 6px;
+                border-radius: 4px;
+            }
+            .model-zone.active {
+                background: rgba(255,255,255,0.2);
+                color: #fff;
+                text-shadow: 0 0 5px currentColor;
+            }
         `;
 
         d.head.innerHTML = `<style>${css}</style>`;
@@ -788,8 +850,20 @@
                      <div class="group-label">Prompts (Preview)</div>
                      <div class="tabs" id="tabContainer"></div>
                 </div>
+
+                <!-- Ribbon Speedometer -->
+                <div class="speedometer-container" title="Geschätzte Token-Last">
+                    <div class="speedometer-ribbon"></div>
+                    <div class="speedometer-labels">
+                        <span class="model-zone" id="zone-lite">⚡ FLASH LITE</span>
+                        <span class="model-zone" id="zone-flash">🚀 FLASH</span>
+                        <span class="model-zone" id="zone-pro">🧠 PRO</span>
+                    </div>
+                    <div class="speedometer-needle" id="tokenNeedle" style="left: 0%"></div>
+                    <div class="speedometer-value" id="tokenValue">0 Tokens</div>
+                </div>
                 
-                <div class="action-row" style="margin-top: 15px;">
+                <div class="action-row" style="margin-top: 5px;">
                      <div>
                         <div class="group-label">Exportieren</div>
                         <div class="btn-row">
@@ -992,7 +1066,68 @@
             }
         };
 
+        // ============================
+        // TOKEN METER LOGIC
+        // ============================
+        const updateTokenMeter = (text) => {
+            if(!text) return;
+            // Approx 4 chars = 1 token
+            const tokens = Math.ceil(text.length / 4);
+            const maxTokens = 100000; // Define a "Scale" max for visual purposes (not actual limit)
+            
+            // Logarithmic scale for better visualization of small vs large
+            // Let's use a segmented scale for the ribbon
+            // 0-10k -> 0-33%  (Lite Range)
+            // 10k-40k -> 33-66% (Flash Range)
+            // 40k+ -> 66-100% (Pro Range)
+            
+            let percent = 0;
+            let activeZone = 'lite';
+
+            if(tokens < 10000) {
+                // 0 to 33%
+                percent = (tokens / 10000) * 33;
+                activeZone = 'lite';
+            } else if (tokens < 40000) {
+                // 33 to 66%
+                percent = 33 + ((tokens - 10000) / 30000) * 33;
+                activeZone = 'flash';
+            } else {
+                // 66 to 100% (capped)
+                percent = 66 + ((tokens - 40000) / 60000) * 34;
+                if(percent > 98) percent = 98;
+                activeZone = 'pro';
+            }
+
+            d.getElementById('tokenNeedle').style.left = `${percent}%`;
+            d.getElementById('tokenValue').textContent = `~${(tokens/1000).toFixed(1)}k T`;
+
+            // Update Labels
+            d.querySelectorAll('.model-zone').forEach(el => el.classList.remove('active'));
+            d.getElementById(`zone-${activeZone}`).classList.add('active');
+            
+            // Auto-Select Model (Optional, but nice hint)
+            // If user hasn't manually locked a model? For now just visual hint.
+        };
+
+        // Initial Update
         out.value = PROMPT_LEVELS[state.currentPromptLevel].gen(state.metaData, state.collectedRoots);
+        updateTokenMeter(out.value);
+
+        // Update on prompt change (re-hooking the buttons logic is needed since we replaced "onclick" earlier? 
+        // No, I am just adding this function call to the existing onclick handlers I defined previously in the HTML string? 
+        // Wait, I defined onclick in JS loop. I need to modify that JS loop to call updateTokenMeter.
+        // I will do it by overriding the buttons' onclick here or ensuring the prev loop calls it.
+        // Since I cannot edit the prev loop easily without re-writing the whole block, I will re-iterate.
+        
+        d.querySelectorAll('.tab-btn').forEach(btn => {
+             const oldClick = btn.onclick;
+             btn.onclick = (e) => {
+                 if(oldClick) oldClick(e);
+                 updateTokenMeter(out.value);
+             };
+        });
+
     }
 
     function init() {
