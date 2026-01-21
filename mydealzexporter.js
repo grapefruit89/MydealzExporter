@@ -133,10 +133,12 @@
                     // sensible whitelist/blacklist
                     // sensible whitelist/blacklist
                     if(id.includes('vision') || id.includes('embedding') || id.includes('tts') || id.includes('aqa')) return false;
-                    // Exclude Image/Banana/Nano models
+                    // Strict Flash Only as requested
                     if(id.includes('image') || id.includes('banana') || id.includes('nano')) return false;
-                    // User wants "sensible" models for text -> Flash, Pro, Ultra, Exp
-                    return id.includes('flash') || id.includes('pro') || id.includes('ultra') || id.includes('exp');
+                    if(id.includes('pro') || id.includes('lite')) return false;
+                    
+                    // Allow Flash variants
+                    return id.includes('flash');
                 })
                 .sort((a,b) => {
                     // Flash first
@@ -668,6 +670,14 @@
                 display: flex; flex-direction: column;
             }
             
+            .main {
+                flex: 1;
+                display: flex; flex-direction: column;
+                overflow: hidden; /* Crucial for internal scroll */
+                min-height: 0; /* Flexbox fix */
+                position: relative;
+            }
+            
             .header {
                 flex: 0 0 auto;
                 padding: 12px 20px; background: var(--surface); border-bottom: 1px solid var(--border);
@@ -802,8 +812,9 @@
                 line-height: 1.5;
                 background: #FAFAFA; 
                 color: #334155; 
-                overflow-y: auto;
-                white-space: pre-wrap; /* Preserve whitespace */
+                overflow-y: auto; /* Scroll internally */
+                white-space: pre-wrap; 
+                box-sizing: border-box;
             }
             .editor:focus { background: #fff; }
             `;
@@ -873,10 +884,10 @@
                      <div class="panel">
                         <div class="group-label">Exportieren</div>
                         <div class="btn-row">
-                            <button class="btn" id="copyBtn">📋 Copy</button>
-                            <button class="btn btn-primary" id="saveMd">💾 .MD</button>
-                            <button class="btn" id="saveJson">💾 .JSON</button>
-                            <button class="btn" id="refreshBtn" title="Cache löschen & Neu laden">🔄</button>
+                            <button class="btn" id="copyBtn" title="In Zwischenablage kopieren">📋 Copy</button>
+                            <button class="btn" id="viewMd">�️ .MD</button>
+                            <button class="btn" id="viewJson">�️ .JSON</button>
+                            <button class="btn btn-primary" id="downloadBtn" title="Aktuelle Ansicht speichern">� Save</button>
                         </div>
                     </div>
                     <div class="panel">
@@ -939,15 +950,33 @@
                 showToast("✅ Erfolgreich kopiert!");
             } catch(e) { /* fallback omitted for brevity */ }
         };
-        d.getElementById('saveMd').onclick = () => downloadFile(`${baseName}.md`, out.innerText, 'text/markdown');
-        d.getElementById('saveJson').onclick = () => downloadFile(`${baseName}.json`, JSON.stringify({meta: state.metaData, comments: state.collectedRoots},null,2), 'application/json');
-        
-        d.getElementById('refreshBtn').onclick = async () => {
-             if(confirm("Cache löschen und neu laden?")) {
-                 await CacheManager.delete(state.metaData.OP ? state.threadId : getThreadId()); 
-                 w.close();
-                 if(w.UnsafeRunExport) w.UnsafeRunExport();
-             }
+
+        // Export State
+        let currentFormat = 'md'; // md or json
+
+        d.getElementById('viewMd').onclick = () => {
+            currentFormat = 'md';
+            out.innerText = PROMPT_LEVELS[state.currentPromptLevel].gen(state.metaData, state.collectedRoots);
+            updateTokenMeter(out.innerText);
+            showToast("ℹ️ Markdown Vorschau");
+        };
+
+        d.getElementById('viewJson').onclick = () => {
+            currentFormat = 'json';
+            const jsonStr = JSON.stringify({meta: state.metaData, comments: state.collectedRoots},null,2);
+            out.innerText = jsonStr;
+            updateTokenMeter(jsonStr);
+            showToast("ℹ️ JSON Vorschau");
+        };
+
+        d.getElementById('downloadBtn').onclick = () => {
+            if(currentFormat === 'md') {
+                downloadFile(`${baseName}.md`, out.innerText, 'text/markdown');
+            } else {
+                downloadFile(`${baseName}.json`, out.innerText, 'application/json');
+            }
+        };
+
         };
 
         // ============================
