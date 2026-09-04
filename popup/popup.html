@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Inter", sans-serif; width: 280px; padding: 16px; background: #F8FAFC; color: #0F172A; margin: 0; }
+    h2 { font-size: 14px; font-weight: 700; margin: 0 0 4px; }
+    p { font-size: 12px; color: #64748B; margin: 0 0 16px; }
+    label { font-size: 11px; font-weight: 700; color: #64748B; text-transform: uppercase; letter-spacing: .05em; display: block; margin-bottom: 6px; }
+    input { width: 100%; box-sizing: border-box; padding: 8px 10px; border: 1px solid #E2E8F0; border-radius: 8px; font-size: 13px; font-family: monospace; outline: none; }
+    input:focus { border-color: #2563EB; box-shadow: 0 0 0 3px rgba(37,99,235,.1); }
+    button { margin-top: 10px; width: 100%; padding: 9px; background: #2563EB; color: white; border: none; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; }
+    button:hover { background: #1D4ED8; }
+    .saved { margin-top: 8px; font-size: 12px; color: #16A34A; text-align: center; display: none; }
+    .hint { margin-top: 12px; font-size: 11px; color: #94A3B8; text-align: center; }
+    a { color: #2563EB; }
+  </style>
+</head>
+<body>
+  <h2>🧠 MyDealz AI Exporter</h2>
+  <p>Gehe auf eine Deal-Seite und klicke den blauen Button.</p>
+
+  <label>Gemini API Key</label>
+  <input type="password" id="apiKey" placeholder="AIza...">
+  <button id="save">Speichern</button>
+  <div class="saved" id="saved">✅ Gespeichert!</div>
+
+  <p class="hint">
+    <a href="https://aistudio.google.com/app/apikey" target="_blank">API Key holen → Google AI Studio</a>
+  </p>
+
+  <script src="popup.js"></script>
+</body>
+</html>
