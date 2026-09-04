@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         MyDealz AI Exporter v14.2 (Final Clean)
+// @name         MyDealz AI Exporter v16.1 (UI Perfect + Safety)
 // @namespace    http://tampermonkey.net/
-// @version      14.2
-// @description  Hybrid Architecture: Dashboard UI + Smart Model Filter (No Lite/Image) + Deep Research Support
+// @version      16.1
+// @description  Exact UI Replica + GraphQL Engine + Overwrite Protection.
 // @author       Antigravity
 // @match        https://www.mydealz.de/deals/*
 // @match        https://www.mydealz.de/gutscheine/*
@@ -10,6 +10,7 @@
 // @icon         https://www.mydealz.de/favicon.svg
 // @require      https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.0.8/purify.min.js
 // @connect      generativelanguage.googleapis.com
+// @connect      www.mydealz.de
 // @grant        GM_addStyle
 // @grant        GM_setClipboard
 // @grant        GM_xmlhttpRequest
@@ -20,34 +21,107 @@
     'use strict';
 
     // ==========================================
-    // 1. CONFIG & THEME
+    // 0. GRAPHQL ENGINE (v6 Logic)
     // ==========================================
-    const THEME = {
-        primary: '#03a9f4',
-        bg: '#f8f9fa',
-        surface: '#ffffff',
-        border: '#e2e8f0',
-        text: '#334155'
-    };
+    const GQL = {
+        QUERY: `
+            query comments($filter: CommentFilter!, $limit: Int, $page: Int) {
+              comments(filter: $filter, limit: $limit, page: $page) {
+                items {
+                  commentId
+                  preparedHtmlContent  
+                  createdAt            
+                  user { username }
+                  reactionCounts { type count }
+                  repliesPreview {
+                     commentId
+                     preparedHtmlContent
+                     createdAt
+                     user { username }
+                     reactionCounts { type count }
+                  }
+                }
+                pagination { last }
+              }
+            }
+        `,
+        getXsrf() {
+            const meta = document.querySelector('meta[name="csrf-token"]');
+            if (meta) return meta.getAttribute('content');
+            const match = document.cookie.match(/xsrf_t=([^;]+)/);
+            return match ? decodeURIComponent(match[1]) : null;
+        },
+        cleanText(html) {
+            if (!html) return "";
+            return html.replace(/<br\s*\/?>/gi, "\\n").replace(/<[^>]+>/g, "").replace(/&amp;/g, "&").replace(/&quot;/g, '"').trim();
+        },
+        compressVotes(counts) {
+            if (!counts || counts.length === 0) return undefined;
+            const out = {};
+            let hasSignal = false;
+            counts.forEach(c => {
+                if (c.count > 0) {
+                    out[c.type.toLowerCase()] = c.count;
+                    hasSignal = true;
+                }
+            });
+            return hasSignal ? out : undefined;
+        },
+        transform(item) {
+            if (!item) return null;
+            const node = {
+                id: item.commentId,
+                user: item.user?.username || "Deleted",
+                date: item.createdAt, 
+                text: this.cleanText(item.preparedHtmlContent),
+                votes: this.compressVotes(item.reactionCounts)
+            };
+            if (item.repliesPreview && item.repliesPreview.length > 0) {
+                node.replies = item.repliesPreview.map(r => this.transform(r)).filter(Boolean);
+            }
+            return node;
+        },
+        async fetchAll(threadId, onProgress) {
+            const token = this.getXsrf();
+            if (!token) throw new Error("Kein Login Token!");
+            const headers = { 'content-type': 'application/json', 'x-xsrf-token': token, 'x-request-type': 'application/vnd.pepper.v1+json' };
+            const body = (p) => JSON.stringify({ query: this.QUERY, variables: { filter: { threadId: { eq: threadId }, order: { direction: "Ascending" } }, limit: 100, page: p } });
 
-    const PROMPT_LEVELS = {
-        SHORT: {
-            label: '⚡ Kurz',
-            gen: (meta, comments) => `# SYSTEM: Erstelle eine KURZE Zusammenfassung. Fokus auf Deal-Qualität & Fakten.\n\n# METADATA\n${fmtMeta(meta)}\n\n# COMMENTS\n${formatComments(comments)}`
-        },
-        MEDIUM: {
-            label: '💡 Standard',
-            gen: (meta, comments) => `# SYSTEM: Standard Analyse. Gehe auf Stimmung, Alternativen und versteckte Infos ein.\n\n# METADATA\n${fmtMeta(meta)}\n\n# COMMENTS\n${formatComments(comments)}`
-        },
-        DETAILED: {
-            label: '🧐 Deep Dive',
-            gen: (meta, comments) => `# SYSTEM: Ausführliche Recherche-Analyse. Extrahiere jede relevante User-Erfahrung.\n\n# METADATA\n${fmtMeta(meta)}\n\n# COMMENTS\n${formatComments(comments)}`
+            let allItems = [];
+            // Page 1
+            if(onProgress) onProgress("Page 1...");
+            const r1 = await fetch('/graphql', { method: 'POST', headers, body: body(1) });
+            const d1 = (await r1.json()).data;
+            
+            if (d1?.comments?.items) {
+                allItems.push(...d1.comments.items);
+                const last = d1.comments.pagination.last;
+                for (let p = 2; p <= last; p++) {
+                    if(onProgress) onProgress(`Page ${p}/${last}...`);
+                    await new Promise(r => setTimeout(r, 400));
+                    const rp = await fetch('/graphql', { method: 'POST', headers, body: body(p) });
+                    const dp = (await rp.json()).data;
+                    if(dp?.comments?.items) allItems.push(...dp.comments.items);
+                }
+            }
+            return allItems.map(item => this.transform(item));
         }
     };
 
     // ==========================================
-    // 2. NETWORK & STORAGE
+    // 1. HELPERS
     // ==========================================
+    function getThreadId() {
+        const match = window.location.href.match(/(?:deals|gutscheine|diskussion)\/([a-zA-Z0-9-]+-\d+)/);
+        return match ? match[1].split('-').pop() : null;
+    }
+    function extractMetadata() {
+        return {
+            Titel: document.querySelector('h1.thread-title')?.textContent?.trim() || document.title,
+            Preis: document.querySelector('.thread-price')?.textContent?.trim() || "N/A",
+            URL: window.location.href
+        };
+    }
     function gmFetch(url, options = {}) {
         return new Promise((resolve, reject) => {
             GM_xmlhttpRequest({
@@ -55,358 +129,256 @@
                 url: url,
                 headers: options.headers || {},
                 data: options.body,
-                onload: (res) => resolve({
-                    ok: res.status >= 200 && res.status < 300,
-                    status: res.status,
-                    json: () => Promise.resolve(JSON.parse(res.responseText)),
-                    text: () => Promise.resolve(res.responseText)
-                }),
-                onerror: reject,
-                ontimeout: reject
+                onload: (res) => resolve({ ok: res.status >= 200 && res.status < 300, json: () => Promise.resolve(JSON.parse(res.responseText)) }),
+                onerror: reject
             });
         });
     }
 
-    const CacheManager = {
-        getKey(threadId) { return `mydealz_cache_v14_${threadId}`; },
-        get(threadId) {
-            try {
-                const raw = localStorage.getItem(this.getKey(threadId));
-                if (!raw) return null;
-                const data = JSON.parse(raw);
-                if (Date.now() - data.timestamp < 3600000) return data; // 1h TTL
-                return null;
-            } catch (e) { return null; }
-        },
-        set(threadId, meta, comments) {
-            try {
-                localStorage.setItem(this.getKey(threadId), JSON.stringify({ threadId, meta, comments, timestamp: Date.now() }));
-            } catch (e) { console.warn("Cache Full"); }
+    // ==========================================
+    // 2. APPROVED UI (EXACT COPY OF ui_preview.html)
+    // ==========================================
+    const UI_HTML = `
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <title>MyDealz AI Exporter</title>
+    <style>
+        :root {
+            --primary: #2563EB;
+            --primary-hover: #1D4ED8;
+            --bg-body: #F8FAFC;
+            --bg-surface: #FFFFFF;
+            --border: #E2E8F0;
+            --text-main: #0F172A;
+            --text-muted: #64748B;
+            --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+            --shadow-card: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+            --radius-card: 12px;
+            --radius-elem: 8px;
+            --input-height: 36px;
         }
-    };
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Inter", sans-serif; background-color: var(--bg-body); color: var(--text-main); height: 100vh; display: flex; justify-content: center; align-items: center; padding: 20px; }
+        .app-card { background: var(--bg-surface); width: 800px; height: 650px; border: 1px solid var(--border); border-radius: var(--radius-card); box-shadow: var(--shadow-card); display: flex; flex-direction: column; overflow: hidden; }
+        header { padding: 16px 24px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; background: var(--bg-surface); }
+        .brand { font-weight: 700; font-size: 14px; color: var(--text-main); display: flex; align-items: center; gap: 8px; }
+        .control-matrix { padding: 24px; display: grid; grid-template-columns: 1fr 1fr; gap: 24px 32px; background: #FFFFFF; border-bottom: 1px solid var(--border); }
+        .grid-item { display: flex; flex-direction: column; gap: 8px; }
+        .group-label { font-size: 11px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; }
+        .segmented-control { display: inline-flex; background: #F1F5F9; padding: 3px; border-radius: var(--radius-elem); height: var(--input-height); border: 1px solid transparent; }
+        .segment-btn { flex: 1; padding: 0 12px; border: none; border-radius: 6px; background: transparent; color: var(--text-muted); font-size: 12px; font-weight: 500; cursor: pointer; transition: all 0.2s ease; }
+        .segment-btn:hover { color: var(--text-main); }
+        .segment-btn.active { background: white; color: var(--text-main); font-weight: 600; box-shadow: 0 1px 2px rgba(0,0,0,0.08); }
+        .input-group { display: flex; height: var(--input-height); border: 1px solid var(--border); border-radius: var(--radius-elem); background: white; overflow: hidden; width: 100%; max-width: 280px; transition: border-color 0.2s, box-shadow 0.2s; }
+        .input-group:focus-within { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1); }
+        .input-field { flex: 1; border: none; padding: 0 12px; font-size: 13px; font-family: monospace; outline: none; color: var(--text-main); background: transparent; }
+        .input-field::placeholder { color: #94A3B8; }
+        .input-action { width: 36px; border: none; border-left: 1px solid var(--border); background: #FAFAFA; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 14px; color: var(--text-muted); transition: background 0.1s; }
+        .input-action:hover { background: #F1F5F9; color: var(--text-main); }
+        .export-bar { display: flex; align-items: center; gap: 10px; }
+        .btn { height: var(--input-height); padding: 0 16px; border: 1px solid var(--border); border-radius: var(--radius-elem); background: white; font-size: 13px; font-weight: 500; cursor: pointer; color: var(--text-main); display: flex; align-items: center; gap: 6px; transition: all 0.2s; box-shadow: var(--shadow-sm); }
+        .btn:hover { background: #F8FAFC; border-color: #CBD5E1; transform: translateY(-1px); }
+        .btn:active { transform: translateY(0); }
+        .btn-primary { border-color: var(--primary); background: var(--primary); color: white; box-shadow: 0 2px 4px rgba(37, 99, 235, 0.2); }
+        .btn-primary:hover { background: var(--primary-hover); border-color: var(--primary-hover); }
+        .ai-links { display: flex; gap: 10px; }
+        .editor-area { flex: 1; display: flex; flex-direction: column; background: white; position: relative; }
+        .editor-header { padding: 8px 24px; border-bottom: 1px solid var(--border); background: #FAFAFA; color: var(--text-muted); font-size: 11px; font-weight: 600; text-transform: uppercase; display: flex; justify-content: space-between; }
+        .code-block { flex: 1; padding: 24px; border: none; resize: none; outline: none; font-family: 'JetBrains Mono', 'Courier New', monospace; font-size: 13px; line-height: 1.6; color: var(--text-main); background: white; }
+        textarea::-webkit-scrollbar { width: 8px; }
+        textarea::-webkit-scrollbar-thumb { background: #CBD5E1; border-radius: 4px; }
+        .progress-bar { height: 3px; width: 100%; background: transparent; }
+        .progress-fill { height: 100%; width: 0%; background: linear-gradient(90deg, #22C55E, #EAB308, #EF4444); transition: width 0.3s; }
+        .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%) translateY(50px); background: #1e293b; color: white; padding: 8px 16px; border-radius: 20px; font-size: 12px; opacity: 0; transition: all 0.3s; z-index: 999; }
+        .toast.v { transform: translateX(-50%) translateY(0); opacity: 1; }
+    </style>
+</head>
+<body>
+    <div class="app-card">
+        <div class="progress-bar"><div class="progress-fill" id="pBar" style="width: 0%"></div></div>
+        <header>
+            <div class="brand">🧠 MyDealz AI Exporter <span style="font-weight:400; color:#94A3B8; margin-left:6px;">v16.1</span></div>
+            <div id="statusLabel" style="font-size:12px; color:#64748B;">Ready</div>
+        </header>
+
+        <div class="control-matrix">
+            <div class="grid-item">
+                <div class="group-label">PROMPTS</div>
+                <div class="segmented-control" id="promptContainer">
+                    <button class="segment-btn active" data-type="RAW">Keine</button>
+                    <button class="segment-btn" data-type="SHORT">Kurz</button>
+                    <button class="segment-btn" data-type="STANDARD">Standard</button>
+                </div>
+            </div>
+            <div class="grid-item">
+                <div class="group-label">GEMINI AI</div>
+                <div class="input-group">
+                    <input type="password" id="apiKeyInput" class="input-field" placeholder="API Key...">
+                    <select id="modelSelect" style="display:none; flex:1; border:none; outline:none; font-size:12px; padding:0 8px;"></select>
+                    <button class="input-action" id="btnRunGemini">➔</button>
+                </div>
+            </div>
+            <div class="grid-item" style="align-self: end;">
+                <div class="group-label">EXPORT</div>
+                <div class="export-bar">
+                    <div class="segmented-control" id="formatToggle">
+                        <button class="segment-btn active">JSON</button>
+                        <button class="segment-btn">MD</button>
+                    </div>
+                    <button class="btn" id="btnCopy">📋 Copy</button>
+                    <button class="btn btn-primary" id="btnSave">💾 Save</button>
+                </div>
+            </div>
+            <div class="grid-item" style="align-self: end;">
+                <div class="group-label">AI LINKS</div>
+                <div class="ai-links">
+                    <button class="btn" onclick="window.open('https://aistudio.google.com/')">Studio</button>
+                    <button class="btn" onclick="window.open('https://chatgpt.com/')">GPT</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="editor-area">
+            <div class="editor-header">
+                <span>Output Preview</span>
+                <span id="tokenStatus">0 Tokens</span>
+            </div>
+            <textarea class="code-block" id="editor" spellcheck="false" placeholder="Waiting for data..."></textarea>
+        </div>
+        <div id="toast" class="toast"></div>
+    </div>
+</body>
+</html>
+    `;
 
     // ==========================================
-    // 3. SMART MODEL FILTER (v14.2 LOGIC)
+    // 3. MAIN CONTROLLER
     // ==========================================
-    async function fetchModels(key) {
+    async function runExport(startBtn) {
+        const threadId = getThreadId();
+        if(!threadId) return alert("No Thread ID!");
+        
+        startBtn.textContent = "⏳...";
         try {
-            const res = await gmFetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${key}`);
-            if(!res.ok) throw new Error("API Fehler: " + res.status);
-            const json = await res.json();
-            
-            // FINAL BLACKLIST (Includes lite & image)
-            const blacklist = ['tts', 'speech', 'embedding', 'vision', 'aqa', 'nano', 'banana', 'robotics', 'computer-use', 'gemma', 'lite', 'image'];
-
-            return json.models
-                .filter(m => {
-                    const id = m.name.toLowerCase();
-                    
-                    // 1. Check Capabilities
-                    if(!m.supportedGenerationMethods?.includes("generateContent")) return false;
-                    
-                    // 2. Blacklist Check
-                    if(blacklist.some(bad => id.includes(bad))) return false;
-
-                    // 3. Family Check (Gemini OR Deep Research)
-                    const isGemini = id.includes('gemini');
-                    const isDeepRes = id.includes('deep-research');
-                    if (!isGemini && !isDeepRes) return false;
-
-                    // 4. Context Limit (>60k required)
-                    if (m.inputTokenLimit && m.inputTokenLimit < 60000) return false;
-
-                    return true;
-                })
-                .sort((a, b) => {
-                    const nameA = a.name.toLowerCase();
-                    const nameB = b.name.toLowerCase();
-                    const getVer = (n) => { const m = n.match(/(\d+\.\d+|\d+)/); return m ? parseFloat(m[0]) : 0; };
-                    
-                    // Priority: Flash > Version > Stable
-                    const isFlashA = nameA.includes('flash');
-                    const isFlashB = nameB.includes('flash');
-                    
-                    if (isFlashA && !isFlashB) return -1;
-                    if (!isFlashA && isFlashB) return 1;
-
-                    const verA = getVer(nameA);
-                    const verB = getVer(nameB);
-                    if (verA > verB) return -1;
-                    if (verA < verB) return 1;
-
-                    const isExpA = nameA.includes('exp') || nameA.includes('preview');
-                    const isExpB = nameB.includes('exp') || nameB.includes('preview');
-                    if (isExpA && !isExpB) return 1; 
-                    if (!isExpA && isExpB) return -1;
-
-                    return 0;
-                });
-        } catch(e) { console.error(e); throw e; }
-    }
-
-    async function generateWithGemini(key, model, text) {
-        const url = `https://generativelanguage.googleapis.com/v1beta/${model}:generateContent?key=${key}`;
-        const res = await gmFetch(url, {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({ contents: [{ parts: [{ text: text }] }] })
-        });
-        if(!res.ok) {
-            const err = await res.json();
-            throw new Error(err.error?.message || "Gen Error");
+            const comments = await GQL.fetchAll(threadId, (msg) => {
+                startBtn.textContent = `⏳ ${msg.split(' ')[0]}`;
+            });
+            const meta = extractMetadata();
+            startBtn.textContent = "🧠 AI Export";
+            openUi(meta, comments);
+        } catch(e) {
+            alert("Error: " + e.message);
+            startBtn.textContent = "❌ Retry";
         }
-        const json = await res.json();
-        return json.candidates?.[0]?.content?.parts?.[0]?.text || "No response.";
     }
 
-    // ==========================================
-    // 4. EXTRACTION & FALLBACK
-    // ==========================================
-    function cleanText(html) {
-        if (!html) return "";
-        // @ts-ignore
-        const clean = DOMPurify.sanitize(html); 
-        const doc = new DOMParser().parseFromString(clean, 'text/html');
-        doc.querySelectorAll('a').forEach(a => a.textContent = `${a.textContent} (${a.href})`);
-        return doc.body.textContent.replace(/\s+/g, ' ').trim();
-    }
-
-    function getThreadId() {
-        const match = window.location.href.match(/(?:deals|gutscheine|diskussion)\/([a-zA-Z0-9-]+-\d+)/);
-        return match ? match[1].split('-').pop() : null;
-    }
-
-    function extractMetadata(initialState) {
-        const threadId = getThreadId();
-        const threads = initialState?.threads?.threads || {};
-        const thread = threads[threadId];
-        if (!thread) return { Title: document.title, URL: window.location.href };
-
-        return {
-            Titel: thread.title,
-            Preis: thread.price || "N/A",
-            Temperatur: thread.temperature,
-            Autor: thread.userName,
-            Shop: thread.merchantName || "N/A",
-            Erstellt: new Date(thread.createdAt * 1000).toLocaleString(),
-            URL: window.location.href
-        };
-    }
-
-    function extractComments(initialState) {
-        const threadId = getThreadId();
-        const commentsMap = initialState?.comments?.comments || {};
-        const allComments = Object.values(commentsMap).filter(c => c.threadId == threadId);
-        
-        const lookup = {};
-        allComments.forEach(c => lookup[c.commentId] = { ...c, children: [] });
-        const roots = [];
-        allComments.forEach(c => {
-            if (c.parentId && lookup[c.parentId]) lookup[c.parentId].children.push(lookup[c.commentId]);
-            else roots.push(lookup[c.commentId]);
-        });
-
-        const processNode = (node, depth = 0) => {
-            const indent = "  ".repeat(depth);
-            let txt = `${indent}- [${node.userName}]: ${cleanText(node.content)}\n`;
-            if(node.children) node.children.forEach(c => txt += processNode(c, depth+1));
-            return txt;
-        };
-        return roots.map(c => processNode(c)).join("\n");
-    }
-
-    // DOM Fallback Functions (v14.1 Feature)
-    function extractMetadataFromDOM() {
-        const title = document.querySelector('h1.thread-title')?.textContent?.trim() || document.title;
-        const price = document.querySelector('.thread-price')?.textContent?.trim() || "N/A";
-        const temp = document.querySelector('.vote-temp')?.textContent?.trim() || "N/A";
-        return { Titel: title, Preis: price, Temperatur: temp, Autor: "Scraped", Shop: "N/A", Erstellt: new Date().toLocaleString() + " (DOM)", URL: window.location.href };
-    }
-
-    function extractCommentsFromDOM() {
-        const comments = [];
-        document.querySelectorAll('.comment').forEach(el => {
-            const u = el.querySelector('.comment-header .username')?.textContent?.trim() || "User";
-            const t = el.querySelector('.comment-body .userHtml')?.textContent?.trim();
-            if(t) comments.push(`- [${u}]: ${t}`);
-        });
-        return comments.length ? comments.join("\n") : "No comments found in DOM.";
-    }
-
-    const fmtMeta = (m) => Object.entries(m).map(([k,v]) => `${k}: ${v}`).join('\n');
-    const formatComments = (c) => c; 
-
-    // ==========================================
-    // 5. UI (DASHBOARD)
-    // ==========================================
-    function runExport(btn) {
-        const threadId = getThreadId();
-        if(!threadId) return alert("Thread ID nicht gefunden!");
-
-        const cached = CacheManager.get(threadId);
-        if (cached) return openUi(cached.meta, cached.comments, true);
-
-        btn.textContent = "⏳...";
-        
-        // Robust Extraction (State > DOM)
-        let meta, comments;
-        const rawState = unsafeWindow.__INITIAL_STATE__;
-        
-        if(rawState) {
-            try {
-                meta = extractMetadata(rawState);
-                comments = extractComments(rawState);
-            } catch(e) { console.warn("State fail", e); }
-        }
-
-        if(!meta || !comments) {
-            meta = extractMetadataFromDOM();
-            comments = extractCommentsFromDOM();
-        }
-
-        if(!meta || !comments) {
-             btn.textContent = "❌ Error";
-             return alert("Daten konnten nicht geladen werden.");
-        }
-        
-        CacheManager.set(threadId, meta, comments);
-        btn.textContent = "🧠 AI Export";
-        openUi(meta, comments, false);
-    }
-
-    function openUi(meta, comments, isCached) {
-        const w = window.open('', '_blank', 'width=1100,height=900');
-        if(!w) return alert("Popup Blocked!");
+    function openUi(meta, comments) {
+        const w = window.open('', '_blank', 'width=820,height=680');
+        w.document.write(UI_HTML);
+        w.document.close();
         
         const d = w.document;
-        w.document.title = "🧠 MyDealz AI Exporter v14.0 Hybrid";
+        const editor = d.getElementById('editor');
+        const tokenDisplay = d.getElementById('tokenStatus');
+        const showToast = (m) => { const t = d.getElementById('toast'); t.textContent=m; t.classList.add('v'); setTimeout(()=>t.classList.remove('v'),2000); };
 
-        const css = `
-            :root { --bg: ${THEME.bg}; --surface: ${THEME.surface}; --primary: ${THEME.primary}; --border: ${THEME.border}; }
-            body { margin: 0; font-family: 'Inter', sans-serif; background: var(--bg); height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
-            .header { padding: 10px 20px; background: var(--surface); border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
-            .controls { padding: 15px 20px; background: #fff; border-bottom: 1px solid var(--border); display: flex; flex-direction: column; gap: 15px; position: relative; z-index: 10; }
+        // STATE
+        let mode = "RAW"; 
+        let format = "JSON"; 
+        let aiContent = null; // Stores AI Result
+
+        const render = () => {
+            let txt = "";
             
-            /* Tacho */
-            .speedo-wrap { position: absolute; top: -10px; left: 50%; transform: translateX(-50%); width: 280px; height: 10px; background: #e2e8f0; border-radius: 0 0 6px 6px; overflow: hidden; }
-            .speedo-bar { width: 100%; height: 100%; background: linear-gradient(90deg, #4ade80, #facc15, #f87171); }
-            .needle { position: absolute; top: 0; bottom: 0; width: 2px; background: #000; transition: left 0.3s; }
-            .t-val { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); font-size: 9px; font-weight: bold; color: #64748B; background: rgba(255,255,255,0.8); padding: 0 4px; border-radius: 4px; }
-
-            .row { display: flex; gap: 15px; flex-wrap: wrap; }
-            .btn { padding: 6px 12px; border: 1px solid var(--border); background: #fff; border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: 500; }
-            .btn:hover { background: #f8fafc; }
-            .btn-primary { background: var(--primary); color: white; border: none; }
-            .btn-primary:hover { opacity: 0.9; }
-            .tab-btn.active { background: var(--primary); color: white; border-color: var(--primary); }
+            // IF AI CONTENT EXISTS, IT OVERRIDES EVERYTHING
+            // Wait, no. We want to be able to switch back.
+            // But if we toggle, we overwrite AI.
+            // Logic: Render triggers on toggle.
             
-            .editor { flex: 1; resize: none; border: none; padding: 20px; font-family: 'JetBrains Mono', monospace; font-size: 13px; background: #fafafa; outline: none; }
-            .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%) translateY(50px); background: #1e293b; color: white; padding: 8px 16px; border-radius: 20px; font-size: 12px; opacity: 0; transition: all 0.3s; }
-            .toast.v { transform: translateX(-50%) translateY(0); opacity: 1; }
-        `;
-        d.head.innerHTML = `<style>${css}</style>`;
-        
-        d.body.innerHTML = `
-            <div class="header">
-                <b>🧠 MyDealz AI <span style="color:#94a3b8; font-weight:400;">v14.2 Clean</span></b>
-                ${isCached ? '<span style="background:#dcfce7; color:#166534; padding:2px 6px; font-size:10px; border-radius:4px;">⚡ CACHED</span>' : ''}
-            </div>
-            <div class="controls">
-                <div class="speedo-wrap"><div class="speedo-bar"></div><div class="needle" id="ndl"></div></div>
-                <div class="t-val" id="tv">0k</div>
+            if (aiContent && d.activeElement !== editor) {
+                 // We are in AI View? 
+                 // No, let's explicitely handle AI result storage.
+            }
 
-                <div class="row">
-                    <div id="tabs" style="display:flex; gap:5px;"></div>
-                    <div style="flex:1"></div>
-                    <div style="display:flex; gap:5px;">
-                        <input type="password" id="key" placeholder="API Key..." style="width:100px; padding:5px; border:1px solid #e2e8f0; border-radius:4px;">
-                        <select id="model" style="width:140px; border:1px solid #e2e8f0; border-radius:4px;"></select>
-                        <button class="btn btn-primary" id="go">✨ RUN</button>
-                    </div>
-                </div>
-                <div class="row">
-                    <button class="btn" id="cp">📋 Copy</button>
-                    <button class="btn" id="dl">💾 Save .MD</button>
-                    <button class="btn" onclick="window.open('https://aistudio.google.com/app/apikey')">🔑 Get Key</button>
-                </div>
-            </div>
-            <textarea id="out" class="editor" spellcheck="false"></textarea>
-            <div id="toast" class="toast"></div>
-        `;
+            if (mode === "RAW") {
+                if (format === "JSON") txt = JSON.stringify(comments, null, 2);
+                else txt = comments.map(c => `- ${c.user}: ${c.text}`).join("\n");
+            } else {
+                const instructions = mode === "SHORT" ? "Fasse kurz zusammen." : "Analysiere Sentiment, Pros & Cons.";
+                txt = `# SYSTEM: ${instructions}\n\n# DATA\n${JSON.stringify(comments, null, 2)}`;
+            }
 
-        const out = d.getElementById('out');
-        const showToast = (m) => { const t=d.getElementById('toast'); t.textContent=m; t.classList.add('v'); setTimeout(()=>t.classList.remove('v'),2000); };
-        
-        const updateMeter = (txt) => {
-            const t = Math.ceil(txt.length/4);
-            let p = t < 10000 ? (t/10000)*33 : (t < 40000 ? 33+((t-10000)/30000)*33 : 66+((t-40000)/60000)*34);
-            d.getElementById('ndl').style.left = Math.min(p, 98) + '%';
-            d.getElementById('tv').textContent = (t/1000).toFixed(1) + 'k Tokens';
+            editor.value = txt;
+            tokenDisplay.textContent = `~${Math.ceil(txt.length/4)} Tokens`;
+            aiContent = null; // Reset AI content if user manually switches tabs (Confirmed Action)
         };
 
-        let curLvl = 'MEDIUM';
-        Object.keys(PROMPT_LEVELS).forEach(k => {
-            const b = d.createElement('button');
-            b.className = `btn tab-btn ${k==='MEDIUM'?'active':''}`;
-            b.textContent = PROMPT_LEVELS[k].label;
-            b.onclick = () => {
-                d.querySelectorAll('.tab-btn').forEach(e=>e.classList.remove('active'));
-                b.classList.add('active');
-                curLvl = k;
-                out.value = PROMPT_LEVELS[k].gen(meta, comments);
-                updateMeter(out.value);
-            };
-            d.getElementById('tabs').appendChild(b);
+        // SAFETY WRAPPER
+        const protectedSwitch = (action) => {
+            if (aiContent && !confirm("⚠️ AI Ergebnis überschreiben?")) return;
+            action();
+        };
+
+        d.querySelectorAll('#promptContainer .segment-btn').forEach(btn => {
+            btn.onclick = (e) => protectedSwitch(() => {
+                d.querySelectorAll('#promptContainer .segment-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                mode = btn.getAttribute('data-type');
+                render();
+            });
         });
 
-        out.value = PROMPT_LEVELS.MEDIUM.gen(meta, comments);
-        updateMeter(out.value);
-        out.addEventListener('input', ()=>updateMeter(out.value));
+        d.querySelectorAll('#formatToggle .segment-btn').forEach(btn => {
+            btn.onclick = (e) => protectedSwitch(() => {
+                d.querySelectorAll('#formatToggle .segment-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                format = btn.textContent;
+                render();
+            });
+        });
 
-        d.getElementById('cp').onclick = () => { GM_setClipboard(out.value,'text'); showToast("Copied!"); };
-        d.getElementById('dl').onclick = () => {
-            const blob = new Blob([out.value], {type:'text/markdown'});
-            const a = d.createElement('a'); a.href=URL.createObjectURL(blob); a.download=`${meta.Titel.substring(0,20)}.md`; a.click();
+        d.getElementById('btnCopy').onclick = () => { GM_setClipboard(editor.value); showToast("Copied!"); };
+        d.getElementById('btnSave').onclick = () => {
+            const blob = new Blob([editor.value], {type: "text/plain"});
+            const a = d.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = `mydealz_export.${format.toLowerCase()}`;
+            a.click();
+            showToast("Saved!");
         };
 
-        const keyIn = d.getElementById('key');
-        const modSel = d.getElementById('model');
-        const savedKey = localStorage.getItem('mdz_gemini_key');
+        // GEMINI
+        const btnRun = d.getElementById('btnRunGemini');
+        const keyInput = d.getElementById('apiKeyInput');
         
-        const loadModels = async (k) => {
+        btnRun.onclick = async () => {
+            if(!keyInput.value) return alert("API Key?");
+            btnRun.textContent = "⏳";
             try {
-                const models = await fetchModels(k);
-                modSel.innerHTML = models.map(m => `<option value="${m.name}">${m.displayName.replace('Gemini ','')}</option>`).join('');
-                showToast("Connected!");
+                const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${keyInput.value}`;
+                const res = await gmFetch(url, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ contents:[{parts:[{text: editor.value}]}] }) });
+                const json = await res.json();
+                
+                const result = json.candidates?.[0]?.content?.parts?.[0]?.text || "No AI Output";
+                editor.value = result;
+                tokenDisplay.textContent = "✨ AI Generated";
+                aiContent = result; // MARK AS AI CONTENT
+                showToast("AI Finished!");
             } catch(e) { alert(e.message); }
+            btnRun.textContent = "➔";
         };
 
-        if(savedKey) { keyIn.value = savedKey; loadModels(savedKey); }
-        keyIn.onchange = () => { localStorage.setItem('mdz_gemini_key', keyIn.value); loadModels(keyIn.value); };
-
-        d.getElementById('go').onclick = async () => {
-            if(!keyIn.value) return alert("API Key fehlt!");
-            const btn = d.getElementById('go'); btn.textContent="⏳"; btn.disabled=true;
-            try {
-                const res = await generateWithGemini(keyIn.value, modSel.value, out.value);
-                out.value = "🤖 SUMMARY:\n\n" + res + "\n\n" + "-".repeat(30) + "\n\n" + out.value;
-                showToast("Done!");
-            } catch(e) { alert(e.message); }
-            finally { btn.textContent="✨ RUN"; btn.disabled=false; }
-        };
+        render();
     }
 
-    // ==========================================
-    // 6. WATCHDOG
-    // ==========================================
-    setInterval(() => {
-        if(document.getElementById('mydealz-ai-btn')) return;
-        if(!location.href.match(/(?:deals|gutscheine|diskussion)/)) return;
-        const b = document.createElement('button');
-        b.id = 'mydealz-ai-btn'; b.textContent = "🧠 AI";
-        Object.assign(b.style, { position:'fixed', bottom:'20px', right:'20px', zIndex:99999, padding:'10px 16px', background:THEME.primary, color:'white', border:'none', borderRadius:'30px', cursor:'pointer', fontWeight:'bold', boxShadow:'0 4px 10px rgba(0,0,0,0.2)' });
-        b.onclick = () => runExport(b);
-        document.body.appendChild(b);
-    }, 1000);
+    setTimeout(() => {
+        const btn = document.createElement('button');
+        btn.textContent = "🧠 AI Export";
+        btn.style.cssText = "position:fixed; bottom:20px; right:20px; z-index:9999; padding:12px 20px; background:#2563EB; color:white; border:none; border-radius:30px; font-weight:bold; box-shadow:0 4px 12px rgba(0,0,0,0.2); cursor:pointer;";
+        btn.onclick = () => runExport(btn);
+        document.body.appendChild(btn);
+    }, 1500);
 
 })();
