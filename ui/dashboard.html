@@ -1,322 +1,131 @@
 <!DOCTYPE html>
 <html lang="de">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>MyDealz AI Exporter</title>
-  <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
-    :root {
-      --bg: #F0F4F8;
-      --surface: #FFFFFF;
-      --surface2: #F8FAFC;
-      --border: #E2E8F0;
-      --text: #0F172A;
-      --text2: #475569;
-      --text3: #94A3B8;
-      --accent: #2563EB;
-      --accent-hover: #1D4ED8;
-      --accent-soft: rgba(37,99,235,.08);
-      --success: #16A34A;
-      --warn: #D97706;
-      --radius: 12px;
-      --shadow: 0 4px 24px rgba(0,0,0,.08);
-    }
-
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", sans-serif;
-      font-size: 14px;
-      background: var(--bg);
-      color: var(--text);
-      min-height: 100vh;
-      display: flex;
-      justify-content: center;
-      align-items: flex-start;
-      padding: 24px 16px 48px;
-    }
-
-    .card {
-      background: var(--surface);
-      border-radius: var(--radius);
-      box-shadow: var(--shadow);
-      width: 100%;
-      max-width: 860px;
-      overflow: hidden;
-    }
-
-    /* ── HEADER ── */
-    .header {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      padding: 18px 24px;
-      border-bottom: 1px solid var(--border);
-    }
-    .logo { font-size: 22px; }
-    .brand { font-weight: 800; font-size: 16px; color: var(--text); }
-    .brand span { color: var(--accent); }
-    .deal-title {
-      flex: 1;
-      font-size: 13px;
-      color: var(--text2);
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-    .badge {
-      padding: 4px 10px;
-      border-radius: 20px;
-      font-size: 11px;
-      font-weight: 700;
-      letter-spacing: .03em;
-    }
-    .badge-info { background: var(--accent-soft); color: var(--accent); }
-    .badge-ok   { background: #DCFCE7; color: var(--success); }
-    .badge-warn { background: #FEF3C7; color: var(--warn); }
-
-    /* ── CONTROL MATRIX ── */
-    .matrix {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 1px;
-      background: var(--border);
-      border-bottom: 1px solid var(--border);
-    }
-    .cell {
-      background: var(--surface2);
-      padding: 16px 20px;
-    }
-    .cell-label {
-      font-size: 10px;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: .06em;
-      color: var(--text3);
-      margin-bottom: 10px;
-    }
-
-    /* Segmented control */
-    .seg { display: flex; gap: 4px; flex-wrap: wrap; }
-    .seg button {
-      padding: 6px 12px;
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      background: var(--surface);
-      font-size: 12px;
-      font-weight: 500;
-      color: var(--text2);
-      cursor: pointer;
-      transition: all .15s;
-      white-space: nowrap;
-    }
-    .seg button:hover { border-color: var(--accent); color: var(--accent); }
-    .seg button.active {
-      background: var(--accent);
-      border-color: var(--accent);
-      color: #fff;
-    }
-
-    /* API + model row */
-    .api-row { display: flex; gap: 8px; align-items: center; }
-    .api-row input {
-      flex: 1;
-      padding: 8px 10px;
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      font-size: 12px;
-      font-family: monospace;
-      outline: none;
-      background: var(--surface);
-    }
-    .api-row input:focus { border-color: var(--accent); }
-    .api-row select {
-      padding: 8px 10px;
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      font-size: 12px;
-      outline: none;
-      background: var(--surface);
-      color: var(--text);
-      max-width: 160px;
-    }
-    .btn-run {
-      padding: 8px 16px;
-      background: var(--accent);
-      color: #fff;
-      border: none;
-      border-radius: 8px;
-      font-size: 12px;
-      font-weight: 700;
-      cursor: pointer;
-      white-space: nowrap;
-      transition: background .15s;
-    }
-    .btn-run:hover { background: var(--accent-hover); }
-    .btn-run:disabled { opacity: .5; cursor: default; }
-
-    /* Export bar */
-    .export-bar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-    .fmt-toggle { display: flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
-    .fmt-toggle button {
-      padding: 6px 14px;
-      border: none;
-      background: var(--surface);
-      font-size: 12px;
-      font-weight: 600;
-      cursor: pointer;
-      color: var(--text2);
-      transition: all .12s;
-    }
-    .fmt-toggle button.active { background: var(--accent); color: #fff; }
-    .btn-icon {
-      padding: 6px 14px;
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      background: var(--surface);
-      font-size: 12px;
-      font-weight: 600;
-      cursor: pointer;
-      color: var(--text2);
-      transition: all .15s;
-    }
-    .btn-icon:hover { border-color: var(--accent); color: var(--accent); }
-    .token-pill {
-      margin-left: auto;
-      font-size: 11px;
-      color: var(--text3);
-    }
-
-    /* Links cell */
-    .links { display: flex; flex-direction: column; gap: 6px; }
-    .links a {
-      font-size: 12px;
-      color: var(--accent);
-      text-decoration: none;
-      display: flex;
-      align-items: center;
-      gap: 6px;
-    }
-    .links a:hover { text-decoration: underline; }
-
-    /* ── EDITOR ── */
-    .editor-wrap { position: relative; padding: 0; }
-    #output {
-      width: 100%;
-      min-height: 340px;
-      padding: 20px 24px;
-      border: none;
-      outline: none;
-      resize: vertical;
-      font-family: "SF Mono", "Fira Code", Consolas, monospace;
-      font-size: 13px;
-      line-height: 1.65;
-      color: var(--text);
-      background: var(--surface);
-      display: block;
-    }
-
-    /* ── STATUS BAR ── */
-    .statusbar {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      padding: 10px 24px;
-      border-top: 1px solid var(--border);
-      background: var(--surface2);
-      font-size: 11px;
-      color: var(--text3);
-    }
-    #status-msg { flex: 1; }
-    .spinner { display: none; }
-    .spinner.active {
-      display: inline-block;
-      width: 14px; height: 14px;
-      border: 2px solid var(--border);
-      border-top-color: var(--accent);
-      border-radius: 50%;
-      animation: spin .7s linear infinite;
-    }
-    @keyframes spin { to { transform: rotate(360deg); } }
-  </style>
+<meta charset="UTF-8">
+<title>MyDealz AI Exporter</title>
+<style>
+*,*::before,*::after{box-sizing:border-box}
+:root{--bg:#0f172a;--surface:#1e293b;--surface2:#273347;--border:#334155;--accent:#22c55e;--accent2:#3b82f6;--danger:#ef4444;--warn:#f59e0b;--text:#e2e8f0;--muted:#94a3b8;--like:#3b82f6;--helpful:#f59e0b;--funny:#a855f7;--r:10px}
+body{margin:0;background:var(--bg);color:var(--text);font:15px/1.6 'Inter',system-ui,sans-serif}
+.shell{display:grid;grid-template-rows:auto 1fr;height:100vh}
+.topbar{background:var(--surface);border-bottom:1px solid var(--border);padding:12px 24px;display:flex;align-items:center;gap:16px}
+.topbar h1{margin:0;font-size:18px;font-weight:700;color:var(--accent)}
+.pill{background:var(--surface2);border:1px solid var(--border);border-radius:999px;padding:4px 12px;font-size:12px;color:var(--muted)}
+.main{display:grid;grid-template-columns:380px 1fr;overflow:hidden}
+.left-panel{border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden}
+.meta-card{padding:16px;border-bottom:1px solid var(--border)}
+.meta-card h2{margin:0 0 8px;font-size:15px;line-height:1.4}
+.meta-card .deal-link{color:var(--accent2);font-size:13px;text-decoration:none}
+.stats-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;padding:12px;border-bottom:1px solid var(--border)}
+.stat-card{background:var(--surface2);border-radius:var(--r);padding:8px;text-align:center;border:1px solid transparent}
+.stat-card[data-filter]{cursor:pointer;transition:.15s}
+.stat-card[data-filter]:hover{filter:brightness(1.25);border-color:var(--border)}
+.stat-card.active-filter{border-color:var(--accent)!important;background:#22c55e18}
+.stat-card.active-filter .stat-num{color:var(--accent)}
+.stat-card.warn{border-color:var(--warn)}
+.stat-num{font-size:20px;font-weight:800;color:var(--accent)}
+.stat-card.warn .stat-num{color:var(--warn)}
+.stat-lbl{font-size:10px;color:var(--muted);margin-top:2px}
+.warn-note{margin:0;padding:8px 12px;font-size:12px;color:var(--warn);background:#292106;border-top:1px solid #f59e0b40}
+.tabs{display:flex;border-bottom:1px solid var(--border)}
+.tab{flex:1;padding:10px;text-align:center;font-size:13px;font-weight:600;cursor:pointer;color:var(--muted);border:none;background:none;border-bottom:2px solid transparent;transition:.15s}
+.tab.active{color:var(--accent);border-bottom-color:var(--accent)}
+.tab:hover:not(.active){color:var(--text)}
+.sort-bar{padding:8px 12px;border-bottom:1px solid var(--border);display:flex;gap:6px;align-items:center;font-size:12px;color:var(--muted);flex-shrink:0}
+.sort-btn{padding:4px 10px;border-radius:999px;border:1px solid var(--border);background:none;color:var(--muted);font-size:12px;cursor:pointer}
+.sort-btn.active{background:#22c55e20;border-color:var(--accent);color:var(--accent)}
+.comments-wrap{overflow-y:auto;flex:1}
+.comment-card{padding:10px 14px;border-bottom:1px solid #ffffff08}
+.comment-card:hover{background:#ffffff04}
+.reply-card{margin-left:18px;border-left:3px solid #3b82f630;padding-left:12px}
+.comment-header{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:4px}
+.comment-author{font-weight:700;font-size:12px;color:var(--accent2)}
+.comment-date{font-size:11px;color:var(--muted)}
+.comment-text{font-size:13px;line-height:1.5;white-space:pre-wrap}
+.comment-text.deleted{color:var(--muted);font-style:italic}
+.badge{border-radius:999px;padding:2px 7px;font-size:10px;font-weight:700}
+.badge-del{background:#ef444420;color:var(--danger)}
+.badge-hot{background:#f59e0b20;color:var(--warn)}
+.badge-hidden{background:#a855f720;color:#a855f7}
+.badge-score{background:#22c55e15;color:var(--accent)}
+.reactions{display:flex;gap:6px;margin-top:4px;flex-wrap:wrap}
+.reaction{font-size:11px;padding:2px 7px;border-radius:999px;font-weight:600}
+.reaction-like{background:#3b82f620;color:var(--like)}
+.reaction-helpful{background:#f59e0b20;color:var(--helpful)}
+.reaction-funny{background:#a855f720;color:var(--funny)}
+.right-panel{display:flex;flex-direction:column;overflow:hidden}
+.ai-panel{flex:1;overflow-y:auto;padding:20px}
+.ai-panel h3{margin:0 0 16px;font-size:16px;font-weight:700}
+.prompt-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:16px}
+.ai-prompt-btn{padding:10px 12px;background:var(--surface2);border:1px solid var(--border);border-radius:var(--r);color:var(--text);font-size:12px;font-weight:600;cursor:pointer;text-align:left;transition:.15s;line-height:1.4}
+.ai-prompt-btn:hover{background:#22c55e15;border-color:var(--accent);color:var(--accent)}
+.custom-row{display:flex;gap:8px;margin-bottom:16px}
+#custom-prompt{flex:1;background:var(--surface2);border:1px solid var(--border);border-radius:var(--r);padding:10px 14px;color:var(--text);font-size:13px}
+#custom-prompt::placeholder{color:var(--muted)}
+#custom-prompt:focus{outline:none;border-color:var(--accent2)}
+.btn{padding:10px 18px;border:none;border-radius:var(--r);font-size:13px;font-weight:700;cursor:pointer;transition:.15s}
+.btn-primary{background:var(--accent);color:#0f172a}
+.btn-primary:hover{background:#16a34a}
+.btn-secondary{background:var(--surface2);border:1px solid var(--border);color:var(--text)}
+.btn-secondary:hover{border-color:var(--accent2);color:var(--accent2)}
+.ai-output-wrap{position:relative}
+#ai-output{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:16px;min-height:200px;white-space:pre-wrap;font-size:14px;line-height:1.7}
+#ai-copy-btn{position:absolute;top:8px;right:8px;font-size:11px;padding:5px 10px}
+.export-row{padding:12px 20px;border-top:1px solid var(--border);display:flex;gap:8px;flex-shrink:0}
+::-webkit-scrollbar{width:6px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
+</style>
 </head>
 <body>
-<div class="card">
-
-  <!-- HEADER -->
-  <div class="header">
-    <div class="logo">🧠</div>
-    <div>
-      <div class="brand">MyDealz <span>AI</span> Exporter</div>
-    </div>
-    <div class="deal-title" id="deal-title">Lade Daten…</div>
-    <span class="badge badge-info" id="comment-count">— Kommentare</span>
+<div class="shell">
+  <div class="topbar">
+    <h1><img src="../icons/icon48.png" style="height:28px;width:28px;vertical-align:middle;margin-right:8px;border-radius:6px"> MyDealz AI Exporter</h1>
+    <span class="pill" id="topbar-info">Lade...</span>
   </div>
-
-  <!-- MATRIX -->
-  <div class="matrix">
-    <!-- Zelle 1: Prompt -->
-    <div class="cell">
-      <div class="cell-label">Prompt</div>
-      <div class="seg" id="prompt-seg">
-        <button class="active" data-idx="0">Zusammenfassung</button>
-        <button data-idx="1">Top-Deals</button>
-        <button data-idx="2">Kritisch</button>
-        <button data-idx="3">Q&amp;A</button>
-        <button data-idx="4">Vollständig</button>
+  <div class="main">
+    <div class="left-panel">
+      <div id="meta-section"></div>
+      <div id="stats-section"></div>
+      <div class="tabs">
+        <button class="tab active" data-tab="all">Alle</button>
+        <button class="tab" data-tab="hot">🔥 Wichtig (Score≥3)</button>
+        <button class="tab" data-tab="top">👍 Mit Reaktionen</button>
       </div>
-    </div>
-
-    <!-- Zelle 2: Gemini -->
-    <div class="cell">
-      <div class="cell-label">Gemini</div>
-      <div class="api-row">
-        <input type="password" id="api-key" placeholder="Gemini API Key (AIza…)">
-        <select id="model-select">
-          <option value="gemini-2.0-flash">gemini-2.0-flash</option>
-          <option value="gemini-1.5-pro">gemini-1.5-pro</option>
-          <option value="gemini-1.5-flash">gemini-1.5-flash</option>
-        </select>
-        <button class="btn-run" id="btn-run">▶ Run</button>
+      <div class="sort-bar">
+        Sortieren:
+        <button class="sort-btn active" data-sort="default">Zeitlich</button>
+        <button class="sort-btn" data-sort="score">Score ↓</button>
+        <button class="sort-btn" data-sort="replies">Replies ↓</button>
       </div>
+      <div class="comments-wrap" id="comments-section"></div>
     </div>
-
-    <!-- Zelle 3: Export -->
-    <div class="cell">
-      <div class="cell-label">Export</div>
-      <div class="export-bar">
-        <div class="fmt-toggle">
-          <button class="active" id="fmt-md">MD</button>
-          <button id="fmt-json">JSON</button>
+    <div class="right-panel">
+      <div class="ai-panel">
+        <h3>🤖 KI-Analyse</h3>
+        <div class="prompt-grid">
+          <button class="ai-prompt-btn" data-prompt="summary">📋 Deal-Zusammenfassung</button>
+          <button class="ai-prompt-btn" data-prompt="sentiment">📊 Stimmungsanalyse</button>
+          <button class="ai-prompt-btn" data-prompt="questions">❓ Offene Fragen</button>
+          <button class="ai-prompt-btn" data-prompt="highlights">⭐ Beste Kommentare</button>
+          <button class="ai-prompt-btn" data-prompt="problems">⚠️ Probleme &amp; Warnungen</button>
+          <button class="ai-prompt-btn" data-prompt="verdict">✅ Lohnt sich der Deal?</button>
         </div>
-        <button class="btn-icon" id="btn-copy">📋 Kopieren</button>
-        <button class="btn-icon" id="btn-save">💾 Speichern</button>
-        <span class="token-pill" id="token-count">0 Tokens</span>
+        <div class="custom-row">
+          <input id="custom-prompt" type="text" placeholder="Eigene Frage an die KI...">
+          <button class="btn btn-primary" id="btn-custom-ai">Fragen</button>
+        </div>
+        <div class="ai-output-wrap">
+          <div id="ai-output">Waehle eine Analyse oben oder stelle eine eigene Frage.</div>
+          <button class="btn btn-secondary" id="ai-copy-btn">📋</button>
+        </div>
+      </div>
+      <div class="export-row">
+        <button class="btn btn-secondary" id="btn-export-json">⬇ JSON</button>
+        <button class="btn btn-secondary" id="btn-export-md">⬇ Markdown</button>
+        <button class="btn btn-secondary" id="btn-copy">📋 JSON kopieren</button>
+        <span style="margin-left:auto;font-size:10px;color:var(--muted);align-self:center;white-space:nowrap"><a href="https://www.magnific.com" target="_blank" style="color:var(--muted);text-decoration:none">designed by catalyststuff – Magnific.com</a></span>
       </div>
     </div>
-
-    <!-- Zelle 4: Links -->
-    <div class="cell">
-      <div class="cell-label">Links</div>
-      <div class="links" id="deal-links">
-        <a id="link-deal" href="#" target="_blank">🔗 Deal öffnen</a>
-        <a href="https://aistudio.google.com/app/apikey" target="_blank">🔑 API Key holen</a>
-        <a href="https://aistudio.google.com/prompts" target="_blank">💡 AI Studio</a>
-      </div>
-    </div>
   </div>
-
-  <!-- EDITOR -->
-  <div class="editor-wrap">
-    <textarea id="output" spellcheck="false" placeholder="Hier erscheinen die Kommentare oder die KI-Antwort…"></textarea>
-  </div>
-
-  <!-- STATUS BAR -->
-  <div class="statusbar">
-    <div class="spinner" id="spinner"></div>
-    <span id="status-msg">Bereit</span>
-  </div>
-
 </div>
 <script src="dashboard.js"></script>
 </body>
