@@ -1,31 +1,66 @@
 'use strict';
 /* =========================================================
-   listing.js  –  Deal-Karten-Exporter für Listing-Seiten
-   Läuft auf: mydealz.de/, /search*, /gruppe/*, /gutscheine*
+   listing.js  –  Deal-Karten-Exporter (Use Case 1)
+   Listing-Seiten: /, /search*, /gruppe/*, /gutscheine*, etc.
+
+   Für jede Seite:
+   1. Thread-IDs aus DOM-Artikeln lesen
+   2. ALLE Threads in EINER GQL-Batch-Anfrage (Alias-Trick) holen
+   3. Vollständige JSON-Datei herunterladen
+
+   GQL-Felder (alle live verifiziert):
+     title, price, displayPrice, nextBestPrice, priceOff,
+     priceDiscount, description (volles HTML), url, shareableLink,
+     temperature, commentCount, isExpired, publishedAt, createdAt,
+     user { username userId }, merchant { merchantId merchantName },
+     mainImage { uid path }
    ========================================================= */
 
+/* ── GQL-Felder (vollständig, live getestet am 2025-09) ── */
 const THREAD_FIELDS = `
   title
-  temperature
   price
+  displayPrice
+  nextBestPrice
+  priceOff
   priceDiscount
+  description
+  url
   shareableLink
-  publishedAt
+  temperature
   commentCount
-  merchant { merchantName }
+  isExpired
+  publishedAt
+  createdAt
+  user { username userId }
+  merchant { merchantId merchantName }
   mainImage { uid path }
-`;
+`.trim();
 
 /* ── CSRF ── */
 function getCsrf() {
   return document.querySelector('meta[name="csrf-token"]')?.content || '';
 }
 
-/* ── GQL: alle IDs auf der Seite in EINER Batch-Anfrage ── */
+/* ── HTML → Plaintext (für descriptionText) ── */
+function htmlToText(html) {
+  const tmp = document.createElement('div');
+  tmp.innerHTML = html || '';
+  return tmp.innerText.replace(/\n{3,}/g, '\n\n').trim();
+}
+
+/* ── Bild-URL aufbauen ── */
+function buildImageUrl(mainImage) {
+  if (!mainImage?.uid || !mainImage?.path) return null;
+  // Format: https://static.mydealz.de/{path}/{uid}/fs/895x577/qt/65/{uid}
+  return `https://static.mydealz.de/${mainImage.path}/${mainImage.uid}/fs/895x577/qt/65/${mainImage.uid}`;
+}
+
+/* ── GQL Batch-Anfrage: alle IDs in EINER Anfrage per Alias ── */
 async function fetchThreadsBatch(ids) {
-  const aliases = ids.map(id =>
-    `t${id}: thread(threadId: { eq: ${id} }) { ${THREAD_FIELDS} }`
-  ).join('\n');
+  const aliases = ids
+    .map(id => `t${id}: thread(threadId: { eq: ${id} }) { ${THREAD_FIELDS} }`)
+    .join('\n');
 
   const res = await fetch('/graphql', {
     method: 'POST',
@@ -37,176 +72,198 @@ async function fetchThreadsBatch(ids) {
     body: JSON.stringify({ query: `query { ${aliases} }` })
   });
 
-  if (!res.ok) throw new Error(`GQL HTTP ${res.status}`);
-  const data = await res.json();
-  if (data.errors) console.warn('[MDE] GQL warnings:', data.errors);
+  if (!res.ok) throw new Error(`GraphQL HTTP ${res.status}`);
+  const json = await res.json();
+  if (json.errors) console.warn('[MDE Listing] GQL-Hinweise:', json.errors);
 
-  // Flatten alias map → array, enrich with DOM extras
   return ids.map(id => {
-    const d = data.data?.[`t${id}`] || {};
-    const artEl = document.getElementById(`thread_${id}`);
+    const d = json.data?.[`t${id}`];
+    if (!d) return { id, error: 'nicht gefunden' };
 
-    // DOM-Fallbacks für Felder die GQL nicht liefert
-    const oldPriceEl  = artEl?.querySelector('[class*="price--old"]');
-    const discountEl  = artEl?.querySelector('[class*="badge--discount"]');
-    const authorEl    = artEl?.querySelector('[class*="cept-post-user"]') 
-                     || artEl?.querySelector('a[href*="/profile/"]');
-    const timeEl      = artEl?.querySelector('time');
-
-    const imageUrl = d.mainImage
-      ? `https://static.mydealz.de/${d.mainImage.path}/${d.mainImage.uid}/fs/895x577/qt/65/${d.mainImage.uid}`
-      : null;
+    // Discount % berechnen (falls GQL null liefert)
+    let discountPct = d.priceDiscount;
+    if (discountPct == null && d.nextBestPrice && d.price != null && d.nextBestPrice > d.price) {
+      discountPct = Math.round((d.nextBestPrice - d.price) / d.nextBestPrice * 100);
+    }
 
     return {
       id,
-      title:         d.title || artEl?.querySelector('[class*="thread-title"]')?.innerText?.trim() || '',
-      url:           d.shareableLink?.replace('/share-deal/', '/deals/') 
-                  || `https://www.mydealz.de/deals/${id}`,
-      shareLink:     d.shareableLink || '',
-      temperature:   d.temperature ?? null,
-      price:         d.price ?? null,
-      priceOld:      oldPriceEl?.innerText?.replace(/[^\d,\.]/g, '') || null,
-      discount:      discountEl?.innerText?.trim() || null,
-      merchant:      d.merchant?.merchantName || '',
-      commentCount:  d.commentCount ?? null,
-      publishedAt:   d.publishedAt ? new Date(d.publishedAt * 1000).toISOString() : null,
-      imageUrl,
-      author:        authorEl?.innerText?.trim() || null
+
+      // Identifikation
+      url:            d.url || `https://www.mydealz.de/deals/${id}`,
+      shareLink:      d.shareableLink || '',
+
+      // Inhalt
+      title:          d.title || '',
+      description:    htmlToText(d.description),   // Plaintext
+      descriptionHtml: d.description || '',         // Original-HTML
+
+      // Preise
+      price:          d.price ?? null,
+      displayPrice:   d.displayPrice || null,       // "35,90€"
+      originalPrice:  d.nextBestPrice ?? null,      // durchgestrichener Preis
+      priceOff:       d.priceOff ?? null,           // Rabattbetrag (€)
+      discountPct,                                  // Rabatt %
+
+      // Meta
+      temperature:    d.temperature ?? null,
+      commentCount:   d.commentCount ?? null,
+      isExpired:      d.isExpired ?? false,
+      publishedAt:    d.publishedAt  ? new Date(d.publishedAt  * 1000).toISOString() : null,
+      createdAt:      d.createdAt    ? new Date(d.createdAt    * 1000).toISOString() : null,
+
+      // Akteure
+      author:         d.user?.username   || null,
+      authorId:       d.user?.userId     || null,
+      merchant:       d.merchant?.merchantName || null,
+      merchantId:     d.merchant?.merchantId  || null,
+
+      // Bild
+      imageUrl:       buildImageUrl(d.mainImage)
     };
   });
 }
 
-/* ── IDs aus dem DOM extrahieren ── */
+/* ── Thread-IDs aus DOM-Artikeln ── */
 function getThreadIds() {
   return [...document.querySelectorAll('article[id^="thread_"]')]
     .map(el => el.id.replace('thread_', ''))
     .filter(id => /^\d+$/.test(id));
 }
 
-/* ── JSON-Download ── */
+/* ── JSON herunterladen ── */
 function downloadJson(data, filename) {
-  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json;charset=utf-8' });
   const url  = URL.createObjectURL(blob);
   const a    = document.createElement('a');
   a.href = url;
   a.download = filename;
+  document.body.appendChild(a);
   a.click();
+  document.body.removeChild(a);
   URL.revokeObjectURL(url);
 }
 
-/* ── Button injizieren ── */
+/* ── Floating-Button ── */
 function createButton() {
   const btn = document.createElement('button');
   btn.id = 'mde-listing-btn';
-  btn.textContent = '📦 Export Deals (JSON)';
+  btn.innerHTML = '📦 <span id="mde-label">Export Deals</span>';
   Object.assign(btn.style, {
-    position:    'fixed',
-    bottom:      '24px',
-    right:       '24px',
-    zIndex:      '99999',
-    padding:     '12px 20px',
-    background:  '#2563EB',
-    color:       '#fff',
-    border:      'none',
-    borderRadius:'12px',
-    fontSize:    '14px',
-    fontWeight:  '700',
-    fontFamily:  'system-ui, sans-serif',
-    cursor:      'pointer',
-    boxShadow:   '0 4px 16px rgba(37,99,235,.4)',
-    transition:  'all .2s',
-    lineHeight:  '1.2'
+    position:     'fixed',
+    bottom:       '24px',
+    right:        '24px',
+    zIndex:       '2147483647',
+    padding:      '12px 20px',
+    background:   '#2563EB',
+    color:        '#fff',
+    border:       'none',
+    borderRadius: '12px',
+    fontSize:     '14px',
+    fontWeight:   '700',
+    fontFamily:   'system-ui, -apple-system, sans-serif',
+    cursor:       'pointer',
+    boxShadow:    '0 4px 20px rgba(37,99,235,.45)',
+    transition:   'background .15s, transform .1s',
+    lineHeight:   '1.3',
+    whiteSpace:   'nowrap'
   });
 
+  const label = () => btn.querySelector('#mde-label');
   btn.addEventListener('mouseenter', () => btn.style.background = '#1D4ED8');
   btn.addEventListener('mouseleave', () => btn.style.background = '#2563EB');
+  btn.addEventListener('mousedown',  () => btn.style.transform = 'scale(.97)');
+  btn.addEventListener('mouseup',    () => btn.style.transform = '');
 
   btn.addEventListener('click', async () => {
     const ids = getThreadIds();
-    if (ids.length === 0) {
-      btn.textContent = '⚠ Keine Deals gefunden';
-      setTimeout(() => btn.textContent = '📦 Export Deals (JSON)', 2000);
+    if (!ids.length) {
+      label().textContent = '⚠ Keine Deals';
+      setTimeout(() => label().textContent = 'Export Deals', 2000);
       return;
     }
 
-    btn.textContent = `⏳ Lade ${ids.length} Deals…`;
+    label().textContent = `⏳ ${ids.length} Deals laden…`;
     btn.disabled = true;
+    btn.style.opacity = '.7';
 
     try {
       const deals = await fetchThreadsBatch(ids);
 
-      // Meta hinzufügen
-      const searchParams = new URLSearchParams(window.location.search);
+      const sp    = new URLSearchParams(window.location.search);
+      const query = sp.get('q') || null;
+      const page  = sp.get('page') || '1';
+
       const exportObj = {
-        exportedAt: new Date().toISOString(),
-        source:     window.location.href,
-        query:      searchParams.get('q') || null,
-        page:       searchParams.get('page') || '1',
-        dealCount:  deals.length,
+        _meta: {
+          exportedAt: new Date().toISOString(),
+          source:     window.location.href,
+          query,
+          page,
+          dealCount:  deals.length
+        },
         deals
       };
 
-      // Dateiname
-      const q     = searchParams.get('q') || 'listing';
-      const page  = searchParams.get('page') || '1';
-      const fname = `mydealz_${q.replace(/\s+/g,'_')}_p${page}_${Date.now()}.json`;
+      const safeName = (query || 'listing').replace(/[^\w\s-]/g, '').replace(/\s+/g, '_').slice(0, 40);
+      downloadJson(exportObj, `mydealz_${safeName}_p${page}.json`);
 
-      downloadJson(exportObj, fname);
-
-      btn.textContent = `✅ ${deals.length} Deals exportiert!`;
+      label().textContent = `✅ ${deals.length} exportiert`;
       btn.style.background = '#16A34A';
     } catch (err) {
-      btn.textContent = `❌ ${err.message}`;
+      console.error('[MDE Listing]', err);
+      label().textContent = `❌ ${err.message.slice(0, 30)}`;
     } finally {
       btn.disabled = false;
+      btn.style.opacity = '1';
       setTimeout(() => {
-        btn.textContent = '📦 Export Deals (JSON)';
+        label().textContent = 'Export Deals';
         btn.style.background = '#2563EB';
-      }, 3000);
+      }, 3500);
     }
   });
 
   return btn;
 }
 
-/* ── Listing-Seite erkennen ── */
+/* ── Ist das eine Listing-Seite? ── */
 function isListingPage() {
-  const path = window.location.pathname;
+  const p = window.location.pathname;
   return (
-    path === '/' ||
-    path.startsWith('/search') ||
-    path.startsWith('/gruppe/') ||
-    path.startsWith('/gutscheine') ||
-    path.startsWith('/alle-deals') ||
-    path.startsWith('/heiß')
+    p === '/' ||
+    p.startsWith('/search') ||
+    p.startsWith('/gruppe/') ||
+    p.startsWith('/group/') ||
+    p.startsWith('/gutschein') ||
+    p.startsWith('/alle-deals') ||
+    p.startsWith('/hei')    // /heiß (URL-encoded)
   );
 }
 
-/* ── Init ── */
-function init() {
+/* ── Initialisierung (mit SPA-Support) ── */
+function mount() {
   if (!isListingPage()) return;
   if (document.getElementById('mde-listing-btn')) return;
-
-  const btn = createButton();
-  document.body.appendChild(btn);
-
-  // SPA: auf Navigation reagieren
-  let lastPath = location.pathname + location.search;
-  const observer = new MutationObserver(() => {
-    const newPath = location.pathname + location.search;
-    if (newPath !== lastPath) {
-      lastPath = newPath;
-      setTimeout(() => {
-        document.getElementById('mde-listing-btn')?.remove();
-        if (isListingPage()) document.body.appendChild(createButton());
-      }, 800);
-    }
-  });
-  observer.observe(document.body, { childList: true, subtree: false });
+  document.body.appendChild(createButton());
 }
 
+function unmount() {
+  document.getElementById('mde-listing-btn')?.remove();
+}
+
+// Erster Mount
 if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', init);
+  document.addEventListener('DOMContentLoaded', mount);
 } else {
-  init();
+  mount();
 }
+
+// SPA-Navigation beobachten (History API)
+let _lastUrl = location.href;
+new MutationObserver(() => {
+  if (location.href !== _lastUrl) {
+    _lastUrl = location.href;
+    unmount();
+    setTimeout(mount, 600); // kurz warten bis DOM aufgebaut
+  }
+}).observe(document.documentElement, { childList: true, subtree: true });
