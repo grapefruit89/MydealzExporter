@@ -1,11 +1,11 @@
 # review_grok.md
 
-**Stand:** 2026-09-04  
+**Stand:** 2026-09-04 (ergänzt)  
 **Autor:** Grok (xAI)  
 **Repo:** `grapefruit89/MydealzExporter` (privat)  
 **Branch:** `master` (Default; kein `main`)  
-**Scope:** Ist-Zustand der Extension + sinnvolle Übernahme von DIN-BriefNEO-Ideen  
-**Nicht:** Code ändern, kein Refactor in diesem Commit
+**Scope:** Ist-Zustand der Extension + Zielkette für die zwei Use-Cases  
+**Nicht:** Code ändern in diesem Commit
 
 Referenzen:
 
@@ -175,7 +175,7 @@ Tab-Create für `ui/dashboard.html` kann als Fallback bleiben
 Nicht alles durch Prompt jagen. Chrome hat spezialisierte APIs.
 
 | Aufgabe im Dashboard | API | Warum |
-|---|---|---|
+|---|---|
 | 5–7 Sätze Deal+Kommentare | **Summarizer** `type: "tl;dr"` / `"teaser"` | dafür gebaut, kürzerer Pfad als Prompt |
 | Stichpunkte Probleme | Summarizer `type: "key-points"` | dito |
 | Stimmung / Verdict / Custom-Frage | **Prompt API** `LanguageModel` | braucht Instruktion |
@@ -254,3 +254,136 @@ der Key und der RAM-Transfer nicht mehr die KI verschlucken.
 
 Nicht DIN-BriefNEO nachbauen. Panel neben den Deal legen,
 Zusammenfassung on-device, Cloud nur als Netz.
+
+---
+
+## 11. Eingefrorene Use-Cases (2026-09-04)
+
+Genau zwei. Kein dritter.
+
+```text
+Seite
+  ├─ Übersicht  →  Use-Case 1  →  JSON (optional MD)
+  └─ Deal       →  Use-Case 2  →  Filter  →  JSON | MD  →  On-Device KI
+```
+
+### Use-Case 1 — Übersichtsseite
+
+**Soll:** alle sichtbaren Deals einschließlich der ausführlichen Beschreibung.
+
+**Ist:** `content/listing.js` macht das bereits. Ein GraphQL-Batch über Aliase,
+Felder inkl. `description` (HTML + Plaintext), Preis, Händler, Temperatur,
+Bild, Share-Link. Download als JSON.
+
+Lücke: kein Markdown auf der Liste. Wenn MD gewünscht ist, nachziehen —
+nicht die GraphQL-Seite anfassen.
+
+KI gehört hier nicht zwingend drauf. Eine Liste von Deal-Texten ist ein
+Export, kein Kommentarproblem.
+
+### Use-Case 2 — Deal-Seite
+
+**Soll:** Beschreibung mit allem Drum und Dran **plus** alle Kommentare.
+
+**Ist:** `content/content.js` holt den Kommentarbaum sauber
+(`threadId` + Replies).  
+**Lücke:** `extractMetadata()` hat nur Titel, Preis, Händler, URL.
+Die volle Deal-Beschreibung fehlt auf der Deal-Seite — genau das Feld,
+das UC1 schon kann. Dieselbe Thread-Query hierher legen.
+
+Danach die Kette:
+
+1. **Müll raus** — deterministisch, vor jedem Modell.  
+   Weg: gelöscht, sehr kurz, 0 Reaktionen + 0 Replies, hoher `funny`
+   bei wenig `helpful`.  
+   Behalten: Text, `helpful`, Replies, Länge.  
+   Das steht in `data_insights.md` schon richtig. Kein Gemini dafür.
+2. **Export** — JSON (Maschinen) und MD (lesen/teilen).
+3. **Lokale Modelle** — Chrome built-in, kein AI-Studio-Key als Default.
+
+| Job | API | Nicht |
+|---|---|---|
+| 5–7 Sätze / Stichpunkte | **Summarizer** (`tl;dr`, `key-points`, `teaser`) | nicht Prompt |
+| Lohnt sich’s / Custom-Frage | **Prompt API** (`LanguageModel`) | nicht Summarizer |
+| Witz-Threads | Heuristik | kein Modell |
+
+Cloud-Gemini nur wenn `availability !== available`.
+
+Side Panel ist nur die Hülle für UC2 (Deal bleibt sichtbar).
+Der Scraper bleibt der Kern.
+
+**Nächster Schnitt, wenn gebaut wird:** Beschreibung aus der Thread-Query
+von UC1 auch in UC2 legen → Filter scharf machen → Summarizer an den
+gefilterten Text. Storage-Key und Session-Payload vorher, sonst stirbt
+die KI still.
+
+---
+
+## 12. Stack-Grenze: HTML/CSS first, kein Python
+
+### Python in der Extension?
+
+**Nein.** Eine Chrome-Extension ist HTML + CSS + JavaScript
+(MV3: Service Worker, Content Script, Side Panel).
+Der Browser führt kein Python aus.
+
+Python ginge nur als Extra-Prozess daneben (Native Messaging oder
+lokaler Server). Dann zweite Runtime, Installationshürde, kein
+On-Device-Gemini-Nano im Panel, mehr Angriffsfläche.
+
+Für mydealz + Summarizer ist das der falsche Stack. Python bleibt dort,
+wo schon Pipelines existieren (PLZ-Build, Gmail-Optimizer) — nicht hier.
+
+### Wenig JS, natives HTML/CSS
+
+Ja, **aber nur in der UI**. Der Scraper bleibt JS.
+GraphQL, CSRF, Pagination, Batch-Replies kann CSS nicht.
+
+| Teil | Stack |
+|---|---|
+| `listing.js` / `content.js` | JS, unvermeidbar |
+| Side Panel / Dashboard | HTML + CSS first |
+| Sichtbarkeit, Tabs, Filter-Chips | `:has()`, Radios, `<dialog>`, `popover` |
+| Download JSON/MD | ein paar Zeilen JS |
+| Summarizer / Prompt | wenig JS, nur API-Aufruf |
+
+Dasselbe Prinzip wie DIN-BriefNEO: Layout und Zustand so weit wie möglich
+deklarativ. Kein zweites Framework. Die 14-KB-`dashboard.js` ist der
+Kandidat zum Abnehmen, nicht der Walker.
+
+Inline-`style` an den Floating-Buttons kann später in eine injizierte
+CSS-Datei. Kosmetik.
+
+---
+
+## 13. Die Chrome-Links — Zuordnung
+
+Was verlinkt wurde, ist Use-Case 2, Schritt 3:
+
+1. **`chrome.sidePanel`** — Panel neben dem Deal, kein neuer Tab.
+2. **Summarizer API (on-device, Gemini Nano)** — Client-side Summarization.
+   Text bleibt auf dem Gerät, kein Key, kein `generativelanguage`.
+   Das *ist* das gewünschte „Client side summarize“.
+3. **Prompt API** — nur für Verdict / freie Frage, nicht fürs Standard-TL;DR.
+
+Das Google-Sample *On-device Summarization with Gemini Nano* macht genau
+das Muster: Side Panel + lokalen Summarizer. Hier kommt vorher noch der
+Kommentar-Filter, dann geht der **gefilterte** Text in `Summarizer.create()`,
+nicht der Roh-Müll.
+
+```text
+Deal-Seite
+  → JS: Beschreibung + Kommentare holen
+  → JS: Müll weg (funny / gelöscht / leer)
+  → HTML-Panel: JSON | MD Export
+  → Summarizer API: 5–7 Sätze / key-points
+  → Prompt API: nur wenn gefragt wird „lohnt sich’s?“
+```
+
+Was nicht gebraucht wird:
+
+- dritter Use-Case
+- KI auf der Übersichtsseite
+- Foundation / DIN-Copy
+- React nur fürs Panel
+- Python-Runtime in der Extension
