@@ -3,31 +3,51 @@
 <head>
   <meta charset="UTF-8">
   <style>
-    body { font-family: -apple-system, BlinkMacSystemFont, "Inter", sans-serif; width: 280px; padding: 16px; background: #F8FAFC; color: #0F172A; margin: 0; }
-    h2 { font-size: 14px; font-weight: 700; margin: 0 0 4px; }
-    p { font-size: 12px; color: #64748B; margin: 0 0 16px; }
-    label { font-size: 11px; font-weight: 700; color: #64748B; text-transform: uppercase; letter-spacing: .05em; display: block; margin-bottom: 6px; }
-    input { width: 100%; box-sizing: border-box; padding: 8px 10px; border: 1px solid #E2E8F0; border-radius: 8px; font-size: 13px; font-family: monospace; outline: none; }
+    *, *::before, *::after { box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Inter", sans-serif; width: 300px; padding: 16px; background: #F8FAFC; color: #0F172A; margin: 0; }
+    h2 { font-size: 15px; font-weight: 800; margin: 0 0 2px; }
+    .sub { font-size: 12px; color: #64748B; margin: 0 0 16px; }
+    .feature { display: flex; gap: 10px; align-items: flex-start; margin-bottom: 12px; padding: 10px 12px; background: #fff; border: 1px solid #E2E8F0; border-radius: 10px; }
+    .feature-icon { font-size: 18px; flex-shrink: 0; }
+    .feature-name { font-size: 12px; font-weight: 700; margin-bottom: 2px; }
+    .feature-desc { font-size: 11px; color: #64748B; }
+    .section { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: #94A3B8; margin: 14px 0 6px; }
+    label { font-size: 11px; font-weight: 700; color: #64748B; display: block; margin-bottom: 5px; }
+    input { width: 100%; padding: 8px 10px; border: 1px solid #E2E8F0; border-radius: 8px; font-size: 12px; font-family: monospace; outline: none; }
     input:focus { border-color: #2563EB; box-shadow: 0 0 0 3px rgba(37,99,235,.1); }
-    button { margin-top: 10px; width: 100%; padding: 9px; background: #2563EB; color: white; border: none; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; }
+    .hint { font-size: 11px; color: #94A3B8; margin-top: 4px; }
+    .hint a { color: #2563EB; }
+    button { margin-top: 8px; width: 100%; padding: 8px; background: #2563EB; color: white; border: none; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; }
     button:hover { background: #1D4ED8; }
-    .saved { margin-top: 8px; font-size: 12px; color: #16A34A; text-align: center; display: none; }
-    .hint { margin-top: 12px; font-size: 11px; color: #94A3B8; text-align: center; }
-    a { color: #2563EB; }
+    .saved { margin-top: 6px; font-size: 12px; color: #16A34A; text-align: center; display: none; }
   </style>
 </head>
 <body>
   <h2>🧠 MyDealz AI Exporter</h2>
-  <p>Gehe auf eine Deal-Seite und klicke den blauen Button.</p>
+  <p class="sub">v16.2 — zwei Tools in einer Erweiterung</p>
 
-  <label>Gemini API Key</label>
-  <input type="password" id="apiKey" placeholder="AIza...">
+  <div class="feature">
+    <div class="feature-icon">📦</div>
+    <div>
+      <div class="feature-name">Deal-Listen-Export</div>
+      <div class="feature-desc">Auf Suchergebnissen & Startseite erscheint ein blauer Button → exportiert alle Deals als JSON.</div>
+    </div>
+  </div>
+
+  <div class="feature">
+    <div class="feature-icon">🧠</div>
+    <div>
+      <div class="feature-name">Kommentar-Analyse (KI)</div>
+      <div class="feature-desc">Auf Deal-Seiten → grüner Button erscheint → Dashboard mit KI-Analyse der Kommentare.</div>
+    </div>
+  </div>
+
+  <div class="section">Gemini API Key (optional)</div>
+  <label>Nur nötig für KI-Kommentar-Analyse</label>
+  <input type="password" id="apiKey" placeholder="AIza… (leer lassen = kein KI)">
+  <div class="hint">Kostenlos bei <a href="https://aistudio.google.com/app/apikey" target="_blank">Google AI Studio</a> holen</div>
   <button id="save">Speichern</button>
   <div class="saved" id="saved">✅ Gespeichert!</div>
-
-  <p class="hint">
-    <a href="https://aistudio.google.com/app/apikey" target="_blank">API Key holen → Google AI Studio</a>
-  </p>
 
   <script src="popup.js"></script>
 </body>
