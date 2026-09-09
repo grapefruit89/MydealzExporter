@@ -68,25 +68,27 @@ const GQL = {
   },
 
   parseReactions(counts) {
-    if (!counts?.length) return undefined;
-    const out = {};
-    let total = 0;
+    const out = {};                       // immer Objekt: konsistentes Schema
+    if (!counts?.length) return out;
     for (const { type, count } of counts) {
-      if (count > 0) { out[type.toLowerCase()] = count; total += count; }
+      if (count > 0) out[type.toLowerCase()] = count;
     }
-    return total > 0 ? out : undefined;
+    return out;
   },
 
   transform(item) {
     if (!item) return null;
+    const author = item.user?.username || null;
+    const deleted = item.deletedBy ? (item.deletedBy.username || '(gelöscht)') : null;
     return {
       id:          item.commentId,
       parentId:    item.mainCommentId || null,
-      author:      item.user?.username || null,
+      author,
       authorId:    item.user?.userId   || null,
       date:        item.createdAt      || null,
       text:        this.cleanText(item.preparedHtmlContent),
-      deleted:     item.deletedBy ? (item.deletedBy.username || '(gelöscht)') : null,
+      deleted,                            // moderiert gelöscht (Moderator-Name)
+      userDeleted: !deleted && /^GelöschterUser\d+$/.test(author || ''),
       reactions:   this.parseReactions(item.reactionCounts),
       replyCount:  item.replyCount || 0
     };
@@ -184,18 +186,24 @@ const GQL = {
       return node;
     }).filter(Boolean);
 
-    // 5. Statistik
+    // 5. Statistik — Reaktionen über ALLE Kommentare inkl. Replies
     const totalReplies = comments.reduce((s,c) => s + (c.replies?.length || 0), 0);
     const hiddenReplies = comments.reduce((s,c) => s + (c._hiddenReplies || 0), 0);
+    const sumReactions = (key) => comments.reduce((s, c) => {
+      let n = c.reactions?.[key] || 0;
+      for (const r of (c.replies || [])) n += r.reactions?.[key] || 0;
+      return s + n;
+    }, 0);
     const stats = {
       totalTopLevel: comments.length,
       totalRepliesVisible: totalReplies,
       totalHiddenReplies: hiddenReplies,
       deleted: comments.filter(c => c.deleted).length,
+      userDeleted: comments.filter(c => c.userDeleted).length,
       reactions: {
-        like:    comments.reduce((s,c)=>s+(c.reactions?.like||0),0),
-        helpful: comments.reduce((s,c)=>s+(c.reactions?.helpful||0),0),
-        funny:   comments.reduce((s,c)=>s+(c.reactions?.funny||0),0)
+        like:    sumReactions('like'),
+        helpful: sumReactions('helpful'),
+        funny:   sumReactions('funny')
       }
     };
 
@@ -211,12 +219,20 @@ function getThreadId() {
 
 /* ── Deal-Metadaten aus DOM ── */
 function extractMetadata() {
+  // Selektoren vom GreasyFork-Exporter übernommen (präziser als Klassen-Guess):
+  // Portale sind layoutstabil, Kommentarblöcke können nicht reinspielen
+  const descEl = document.querySelector('div[data-t="description"]')
+    || document.querySelector('#threadDescriptionItemPortal .userHtml-content')
+    || document.querySelector('main [class*="userHtml-content"]');
   return {
     threadId: getThreadId(),
-    title:    document.querySelector('h1.thread-title, [class*="thread-title"]')?.textContent?.trim()
+    title:    document.querySelector('h1.thread-title')?.textContent?.trim()
               || document.title.split(' | ')[0].trim(),
     price:    document.querySelector('[class*="thread-price"]')?.textContent?.trim() || null,
-    merchant: document.querySelector('[class*="cept-merchant-name"]')?.textContent?.trim() || null,
+    merchant: document.querySelector('[data-t="merchantLink"], [class*="cept-merchant-name"]')?.textContent?.trim() || null,
+    temperature: document.querySelector('.vote-temp')?.textContent?.trim() || null,
+    author:   document.querySelector('.threadItemCard-author .thread-user, .short-profile-target .thread-user')?.textContent?.trim() || null,
+    description: descEl ? GQL.cleanText(descEl.innerHTML) : null,
     url:      window.location.href
   };
 }
