@@ -15,7 +15,18 @@ function extractLinks(html) {
   for (const a of tmp.querySelectorAll('a[href]')) {
     const href = (a.getAttribute('href') || '').trim();
     if (!href || href.startsWith('#') || href.toLowerCase().startsWith('javascript:')) continue;
-    const url = /^https?:\/\//i.test(href) ? href : new URL(href, location.origin).href;
+    let url = /^https?:\/\//i.test(href) ? href : new URL(href, location.origin).href;
+
+    /* mydealz-Cloaking aufheben: bei /visit/-Redirects steckt die echte
+       Ziel-URL oft im title-Attribut (Muster: GreasyFork 532929,
+       "Mydealz Direktlink statt Redirect"). Fällt auf href zurück. */
+    if (url.includes('/visit/')) {
+      const t = (a.getAttribute('title') || '').trim();
+      const target = /^https?:\/\//i.test(t) ? t
+        : (/^[\w.-]+\.[a-z]{2,}(\/|$|\?)/i.test(t) ? 'https://' + t : null);
+      if (target) url = target;
+    }
+
     if (seen.has(url)) continue;
     seen.add(url);
     out.push({ text: (a.textContent || '').trim().slice(0, 120) || null, url });
