@@ -43,6 +43,10 @@ const THREAD_FIELDS = `
   updatedAt
   voucherCode
   temperatureLevel
+  type
+  nsfw
+  keywordNames
+  selectedLocations { isNational }
 `.trim();
 
 /* ── Strukturierter Logger (MDE:Listing) ──
@@ -344,6 +348,12 @@ async function fetchThreadsBatch(ids, onProgress) {
         // Gutschein & Temperatur-Klassifizierung (Feldnamen via studio-amba-Schema bestätigt)
         voucherCode:    d.voucherCode || null,
         temperatureLevel: d.temperatureLevel || null,     // "Hot2", "SuperHot", …
+
+        // Klassifizierung (Raw-Payload-Shape via saswave-Actor offen)
+        type:           d.type || null,                   // "Deal" | "Voucher" | …
+        nsfw:           d.nsfw === true,
+        isNational:     d.selectedLocations?.isNational ?? null,  // lokal vs. bundesweit
+        keywords:       d.keywordNames || null,
 
         // Bild
         imageUrl:       buildImageUrl(d.mainImage)
