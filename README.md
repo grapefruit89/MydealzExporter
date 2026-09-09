@@ -153,10 +153,13 @@ Die Extension liest mydealz' strukturierte Datenlayer, nicht styling-abhängige 
 
 ## Inspiration & Credits
 
-Techniken und Ideen aus der mydealz-Community (alles in `data_insights.md` referenziert):
+Techniken und Ideen aus der mydealz-Community (alles detailliert in `data_insights.md` referenziert):
 
-- **[PepperDealsScraper](https://github.com/amintikk/PepperDealsScraper)** — AJAX-Pagination, Retry-Muster, Filter-URL-Params
-- **[Comment Section Exporter](https://greasyfork.org/en/scripts/557220)** & der eigene Deep-State-Exporter — GQL-Feldbestätigungen, Inline-Links, OP-Marker, Meta-Selektoren
-- **Kommentarsuche-Bookmarklets/Userscripts** ([Nergico](https://github.com/Nergico/MyDealz-Kommentarsuche-mit-Lesezeichen), [MD928835](https://greasyfork.org/de/scripts/524875)) — Volltextsuche-Idee, Permalink-Formate, Auto-Ausklapp-Muster
-- **Sammlung: Starten statt warten** ([Thread 2035404](https://www.mydealz.de/diskussion/sammlung-mydealz-auch-ohne-app-nutzen-2035404)) — autoritative Kategorie-Query, URL-Formate, `temperatureFrom=any`
-- **[data-vue Inspector](https://greasyfork.org/de/scripts/592027)** — Feld-Discovery-Werkzeug
+- **[Sammlung: Starten statt warten](https://www.mydealz.de/diskussion/sammlung-mydealz-auch-ohne-app-nutzen-2035404)** — die zentrale mydealz-Tooling-Sammlung; [Zusätzliche Info 103930](https://www.mydealz.de/diskussion/sammlung-mydealz-auch-ohne-app-nutzen-2035404#additionalInfo-103930) enthält den kategorisierten Tool-Index aller Skripte, Bookmarklets und Erweiterungen
+- **[MD928835](https://greasyfork.org/de/users/1419623-md928835)** (a.k.a. „Anonymer Benutzer", Thread-Gründer der Sammlung) — Autor von Kommentarvolltextsuche, data-vue Inspector und Direktlink-Entzauberung; die produktivste Quelle für GraphQL- und data-vue-Erkenntnisse
+- **[9jS2PL5T](https://greasyfork.org/de/users/1412069-9js2pl5t)** — Co-Autor der [Kommentarvolltextsuche](https://greasyfork.org/de/scripts/524875), aktiv gepflegte Umsetzung der Community-Bookmarklets
+- **[PepperDealsScraper](https://github.com/amintikk/PepperDealsScraper)** (Python, 10 Pepper-Portale) — AJAX-Pagination-Muster, Retry/Backoff, Filter-URL-Params
+- **[Comment Section Exporter](https://greasyfork.org/en/scripts/557220)** (piknockyou) — GQL-Feldbestätigungen (`wasEdited`/`isPinned`/`createdAtTs`), präzise Meta-Selektoren
+- **[Nergico: Kommentarsuche](https://github.com/Nergico/MyDealz-Kommentarsuche-mit-Lesezeichen)** — Volltextsuche-Feature-Idee, Permalink-Formate, Refresh-Detection
+- **[data-vue Inspector](https://greasyfork.org/de/scripts/592027)** (MD928835) — Feld-Discovery-Werkzeug für Schema-Erweiterungen
+- **Eigener Vorgänger:** Deep-State AI Exporter v11–12.3 — Inline-Links, OP-Marker, IndexedDB-Cache-Muster, `createdAtTs`
