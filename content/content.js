@@ -249,6 +249,22 @@ const GQL = {
   }
 };
 
+/* ── Auto-Ausklappen: jede geladene Kommentarseite komplett ausklappen ──
+   Debounced MutationObserver — expandiert immer ALLES (unabhängig vom
+   Button-Label), terminiert von selbst wenn keine Buttons mehr da sind. */
+let _autoExpandTimer = null;
+new MutationObserver(() => {
+  if (getThreadId() && !_expanding) {
+    clearTimeout(_autoExpandTimer);
+    _autoExpandTimer = setTimeout(async () => {
+      const { buttons } = countHiddenReplies();
+      if (!buttons || _expanding) return;
+      const n = await expandAllReplies(null);
+      if (n) log.debug(`Auto-Ausklappen: ${n}× geklickt`);
+    }, 1200);
+  }
+}).observe(document.documentElement, { childList: true, subtree: true });
+
 /* ── Thread-ID aus URL ── */
 function getThreadId() {
   const m = window.location.href.match(/(?:deals|gutscheine|diskussion)\/[a-zA-Z0-9-]+-(\d+)/);
@@ -296,22 +312,30 @@ async function refreshCommentMeta() {
    Bewusst KEIN eigener GraphQL-Render: mydealz rendert die Replies
    selbst (native Klassen, Reply-/Reaktions-Handler). Wir bedienen nur
    die stabilen data-t="moreReplies"-Hooks und zählen mit. */
+let _expanding = false;
+
 async function expandAllReplies(onProgress) {
+  if (_expanding) return 0;
+  _expanding = true;
   const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   let clicked = 0;
 
-  for (let round = 0; round < 50; round++) {           // Obergrenze gegen Runaway
-    const buttons = [...document.querySelectorAll('button[data-t="moreReplies"]:not([data-mde-clicked])')];
-    if (!buttons.length) break;
+  try {
+    for (let round = 0; round < 50; round++) {           // Obergrenze gegen Runaway
+      const buttons = [...document.querySelectorAll('button[data-t="moreReplies"]:not([data-mde-clicked])')];
+      if (!buttons.length) break;
 
-    for (const b of buttons) {
-      b.setAttribute('data-mde-clicked', '1');
-      b.click();
-      clicked++;
-      onProgress?.(`💬 ${clicked}× Antworten geladen…`);
-      await sleep(150);                                 // Pausen gegen Request-Burst
+      for (const b of buttons) {
+        b.setAttribute('data-mde-clicked', '1');
+        b.click();
+        clicked++;
+        onProgress?.(`💬 ${clicked}× Antworten geladen…`);
+        await sleep(150);                                 // Pausen gegen Request-Burst
+      }
+      await sleep(700);                                   // Warten bis neue Buttons erscheinen
     }
-    await sleep(700);                                   // Warten bis neue Buttons erscheinen
+  } finally {
+    _expanding = false;
   }
   return clicked;
 }
