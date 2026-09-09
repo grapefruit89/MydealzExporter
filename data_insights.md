@@ -126,6 +126,14 @@ aus dem HTML (`props.thread`) und die Pepper-AJAX-Endpunkte.
     wegnimmt.
 *   **Widget hide/show-Endpunkte** (`/widgets/<name>/hide|show`) — rein kosmetisch,
     kein Export-Nutzen. Nur dokumentiert.
+*   **„Alle Antworten ausklappen"** (💬-Button) → bewusst als **DOM-Klick** auf
+    `button[data-t="moreReplies"]` umgesetzt, NICHT als eigener GraphQL-Render:
+    mydealz rendert die Replies selbst (native Klassen + Reply-/Reaktions-Handler);
+    ein eigener GQL-Render müsste die Kommentar-DOM-Struktur replizieren und
+    bricht bei jedem Redesign. `data-t`-Attribute sind die stabile Hook-Klasse
+    (gleiches Muster wie `data-t="description"`/`data-t="merchantLink"`).
+    Zähler-Vorschau summiert die "(N)"-Zahlen der Buttons; 150 ms Pause je Klick,
+    700 ms je Runde, Obergrenze 50 Runden gegen Runaway.
 
 ### Aus dem eigenen Vorgänger-Script (Deep-State AI Exporter v11–12.3)
 
