@@ -24,8 +24,7 @@ function renderStats(){
 
 function renderComments(){
   if(currentTab==='links'){renderLinks();return;}
-  let items=[...deal.comments];
-  if(currentTab==='hot') items=items.filter(c=>score(c)>=3);
+  let items=[...deal.comments];  if(currentTab==='hot') items=items.filter(c=>score(c)>=3);
   else if(currentTab==='top') items=items.filter(c=>(c.reactions?.like||0)+(c.reactions?.helpful||0)>=1);
   if(currentFilter==='replies') items=items.filter(c=>(c.replyCount||0)>0);
   else if(currentFilter==='reactions') items=items.filter(c=>((c.reactions?.like||0)+(c.reactions?.helpful||0)+(c.reactions?.funny||0))>0);
@@ -34,8 +33,14 @@ function renderComments(){
   else if(currentFilter==='funny') items=items.filter(c=>(c.reactions?.funny||0)>0);
   if(currentSort==='score') items.sort((a,b)=>score(b)-score(a));
   else if(currentSort==='replies') items.sort((a,b)=>(b.replyCount||0)-(a.replyCount||0));
+  // Volltextsuche: Text/Autor im Kommentar ODER in den Replies
+  const q=(document.getElementById('comment-search')?.value||'').trim().toLowerCase();
+  if(q){
+    const hit=(c)=>((c.text||'')+' '+(c.author||'')).toLowerCase().includes(q)||(c.replies||[]).some(r=>((r.text||'')+' '+(r.author||'')).toLowerCase().includes(q));
+    items=items.filter(hit);
+  }
   const wrap=document.getElementById('comments-section');
-  wrap.innerHTML=items.length?items.map(c=>commentHtml(c,false)).join(''):'<div style="padding:20px;color:var(--muted);text-align:center">Keine Kommentare.</div>';
+  wrap.innerHTML=items.length?items.map(c=>commentHtml(c,false)).join(''):`<div style="padding:20px;color:var(--muted);text-align:center">${q?`Keine Treffer für „${q}“.`:'Keine Kommentare.'}</div>`;
 }
 
 function commentHtml(c,isReply){
@@ -63,7 +68,9 @@ function renderLinks(){
       + links.map(l=>`<div class="link-card"><a href="${esc(l.url)}" target="_blank" rel="noopener noreferrer" class="link-url">${esc(l.text||l.url)}</a><div class="link-meta">@${esc(l.author||'?')} · ${esc(l.date||'')}</div></div>`).join('')
     : '<div style="padding:20px;color:var(--muted);text-align:center">Keine Links.</div>';
 }
-function setupTabs(){document.querySelectorAll('.tab').forEach(btn=>{btn.addEventListener('click',()=>{document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));btn.classList.add('active');currentTab=btn.dataset.tab;renderComments();});});}
+function setupTabs(){document.querySelectorAll('.tab').forEach(btn=>{btn.addEventListener('click',()=>{document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));btn.classList.add('active');currentTab=btn.dataset.tab;renderComments();});});
+  document.getElementById('comment-search')?.addEventListener('input',()=>renderComments());
+}
 function setupSort(){document.querySelectorAll('.sort-btn').forEach(btn=>{btn.addEventListener('click',()=>{document.querySelectorAll('.sort-btn').forEach(b=>b.classList.remove('active'));btn.classList.add('active');currentSort=btn.dataset.sort;renderComments();});});}
 function setupStatFilters(){
   document.querySelectorAll('.stat-card[data-filter]').forEach(card=>{
