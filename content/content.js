@@ -292,24 +292,69 @@ async function refreshCommentMeta() {
   }
 }
 
+/* ── Antworten ausklappen: DOM-Klick auf die echten Buttons ──
+   Bewusst KEIN eigener GraphQL-Render: mydealz rendert die Replies
+   selbst (native Klassen, Reply-/Reaktions-Handler). Wir bedienen nur
+   die stabilen data-t="moreReplies"-Hooks und zählen mit. */
+async function expandAllReplies(onProgress) {
+  const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+  let clicked = 0;
+
+  for (let round = 0; round < 50; round++) {           // Obergrenze gegen Runaway
+    const buttons = [...document.querySelectorAll('button[data-t="moreReplies"]:not([data-mde-clicked])')];
+    if (!buttons.length) break;
+
+    for (const b of buttons) {
+      b.setAttribute('data-mde-clicked', '1');
+      b.click();
+      clicked++;
+      onProgress?.(`💬 ${clicked}× Antworten geladen…`);
+      await sleep(150);                                 // Pausen gegen Request-Burst
+    }
+    await sleep(700);                                   // Warten bis neue Buttons erscheinen
+  }
+  return clicked;
+}
+
+/* Versteckte Replies zählen: "(9)" aus den Button-Labels summieren */
+function countHiddenReplies() {
+  let hidden = 0, buttons = 0;
+  for (const b of document.querySelectorAll('button[data-t="moreReplies"]')) {
+    buttons++;
+    const m = b.textContent.match(/\((\d+)\)/);
+    if (m) hidden += parseInt(m[1], 10);
+  }
+  return { hidden, buttons };
+}
+
 /* ── Button ── */
 function injectButton() {
   if (!getThreadId()) return;
   if (document.getElementById('mde-ai-btn')) return;
-  const btn = document.createElement('button');
+
+  const wrap = document.createElement('div');
+  wrap.id = 'mde-ai-wrap';
+  Object.assign(wrap.style, {
+    position:'fixed',bottom:'24px',right:'24px',zIndex:'2147483647',
+    display:'flex',flexDirection:'column',alignItems:'flex-end',gap:'8px'
+  });
+
+  const makeBtn = (bg, shadow) => {
+    const b = document.createElement('button');
+    Object.assign(b.style, {
+      padding:'12px 20px',background:bg,color:'#fff',
+      border:'none',borderRadius:'12px',fontSize:'14px',fontWeight:'700',
+      fontFamily:'system-ui,sans-serif',boxShadow:shadow,
+      cursor:'pointer',transition:'background .15s',whiteSpace:'nowrap'
+    });
+    return b;
+  };
+
+  const btn = makeBtn('#16A34A', '0 4px 20px rgba(22,163,74,.45)');
   btn.id = 'mde-ai-btn';
   btn.innerHTML = '🧠 <span id="mde-ai-label">Export &amp; Analyse</span>';
-  Object.assign(btn.style, {
-    position:'fixed',bottom:'24px',right:'24px',zIndex:'2147483647',
-    padding:'12px 20px',background:'#16A34A',color:'#fff',
-    border:'none',borderRadius:'12px',fontSize:'14px',fontWeight:'700',
-    fontFamily:'system-ui,sans-serif',boxShadow:'0 4px 20px rgba(22,163,74,.45)',
-    cursor:'pointer',transition:'background .15s',whiteSpace:'nowrap'
-  });
-  const lbl = () => document.getElementById('mde-ai-label');
   btn.addEventListener('mouseenter', () => btn.style.background = '#15803D');
   btn.addEventListener('mouseleave', () => btn.style.background = '#16A34A');
-
   btn.addEventListener('click', async () => {
     const threadId = getThreadId();
     if (!threadId) { lbl().textContent = 'Kein Thread'; return; }
@@ -338,8 +383,41 @@ function injectButton() {
       setTimeout(() => { lbl().textContent = reset; btn.style.background = '#16A34A'; }, 4000);
     }
   });
-  document.body.appendChild(btn);
+
+  const expandBtn = makeBtn('#1e293b', '0 4px 12px rgba(0,0,0,.25)');
+  expandBtn.id = 'mde-expand-btn';
+  expandBtn.title = 'Alle versteckten Antworten ausklappen (für Strg+F). Neue Seiten: einfach erneut klicken.';
+  expandBtn.style.fontSize = '12px';
+  expandBtn.style.padding = '8px 14px';
+  const expLbl = () => document.getElementById('mde-expand-label');
+  expandBtn.innerHTML = '💬 <span id="mde-expand-label">Antworten ausklappen</span>';
+  expandBtn.addEventListener('mouseenter', () => expandBtn.style.background = '#334155');
+  expandBtn.addEventListener('mouseleave', () => expandBtn.style.background = '#1e293b');
+  expandBtn.addEventListener('click', async () => {
+    expandBtn.disabled = true; expandBtn.style.opacity = '.7';
+    try {
+      const n = await expandAllReplies(msg => { expLbl().textContent = msg; });
+      expLbl().textContent = n ? `✅ ${n}× ausgeklappt` : '✅ Alles sichtbar';
+    } catch (err) {
+      log.error('Ausklappen fehlgeschlagen', err);
+      expLbl().textContent = '❌ Fehler';
+    } finally {
+      expandBtn.disabled = false; expandBtn.style.opacity = '1';
+      setTimeout(refreshExpandLabel, 4000);
+    }
+  });
+
+  function refreshExpandLabel() {
+    const { hidden, buttons } = countHiddenReplies();
+    if (!buttons) { expLbl().textContent = '💬 Alles sichtbar'; return; }
+    expLbl().textContent = `💬 ${hidden || buttons} versteckt ausklappen`;
+  }
+
+  wrap.appendChild(btn);
+  wrap.appendChild(expandBtn);
+  document.body.appendChild(wrap);
   refreshCommentMeta();
+  setTimeout(() => { try { refreshExpandLabel(); } catch {} }, 1200);
 }
 
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', injectButton);
