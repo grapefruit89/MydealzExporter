@@ -67,6 +67,25 @@ const GQL = {
     return tmp.innerText.replace(/\n{3,}/g, '\n\n').trim();
   },
 
+  /* Alle Links aus einem Kommentar-HTML — dedupliziert, absolut, Text optional.
+     Kompensiert das innerText-Problem: hrefs gehen im Plaintext sonst verloren. */
+  extractLinks(html) {
+    if (!html) return [];
+    const tmp = document.createElement('div');
+    tmp.innerHTML = html;
+    const out = [];
+    const seen = new Set();
+    for (const a of tmp.querySelectorAll('a[href]')) {
+      const href = (a.getAttribute('href') || '').trim();
+      if (!href || href.startsWith('#') || href.toLowerCase().startsWith('javascript:')) continue;
+      const url = /^https?:\/\//i.test(href) ? href : new URL(href, location.origin).href;
+      if (seen.has(url)) continue;
+      seen.add(url);
+      out.push({ text: (a.textContent || '').trim().slice(0, 120) || null, url });
+    }
+    return out;
+  },
+
   parseReactions(counts) {
     const out = {};                       // immer Objekt: konsistentes Schema
     if (!counts?.length) return out;
@@ -90,6 +109,7 @@ const GQL = {
       deleted,                            // moderiert gelöscht (Moderator-Name)
       userDeleted: !deleted && /^GelöschterUser\d+$/.test(author || ''),
       reactions:   this.parseReactions(item.reactionCounts),
+      links:       this.extractLinks(item.preparedHtmlContent),
       replyCount:  item.replyCount || 0
     };
   },
@@ -233,6 +253,7 @@ function extractMetadata() {
     temperature: document.querySelector('.vote-temp')?.textContent?.trim() || null,
     author:   document.querySelector('.threadItemCard-author .thread-user, .short-profile-target .thread-user')?.textContent?.trim() || null,
     description: descEl ? GQL.cleanText(descEl.innerHTML) : null,
+    links:       descEl ? GQL.extractLinks(descEl.innerHTML) : [],
     url:      window.location.href
   };
 }

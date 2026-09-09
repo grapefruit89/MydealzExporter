@@ -53,6 +53,15 @@ body{margin:0;background:var(--bg);color:var(--text);font:15px/1.6 'Inter',syste
 .reaction-like{background:#3b82f620;color:var(--like)}
 .reaction-helpful{background:#f59e0b20;color:var(--helpful)}
 .reaction-funny{background:#a855f720;color:var(--funny)}
+.comment-links{margin-top:5px;font-size:11px;color:var(--muted);line-height:1.7;word-break:break-all}
+.comment-links a{color:var(--accent2);text-decoration:none}
+.comment-links a:hover{text-decoration:underline}
+.links-summary{padding:10px 14px;font-size:12px;color:var(--muted);border-bottom:1px solid var(--border)}
+.link-card{padding:10px 14px;border-bottom:1px solid #ffffff08}
+.link-card:hover{background:#ffffff04}
+.link-url{color:var(--accent2);font-size:13px;font-weight:600;text-decoration:none;word-break:break-all}
+.link-url:hover{text-decoration:underline}
+.link-meta{font-size:11px;color:var(--muted);margin-top:2px}
 .right-panel{display:flex;flex-direction:column;overflow:hidden}
 .ai-panel{flex:1;overflow-y:auto;padding:20px}
 .ai-panel h3{margin:0 0 16px;font-size:16px;font-weight:700}
@@ -89,6 +98,7 @@ body{margin:0;background:var(--bg);color:var(--text);font:15px/1.6 'Inter',syste
         <button class="tab active" data-tab="all">Alle</button>
         <button class="tab" data-tab="hot">🔥 Wichtig (Score≥3)</button>
         <button class="tab" data-tab="top">👍 Mit Reaktionen</button>
+        <button class="tab" data-tab="links">🔗 Links</button>
       </div>
       <div class="sort-bar">
         Sortieren:

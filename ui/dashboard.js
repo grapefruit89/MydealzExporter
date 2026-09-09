@@ -23,6 +23,7 @@ function renderStats(){
 }
 
 function renderComments(){
+  if(currentTab==='links'){renderLinks();return;}
   let items=[...deal.comments];
   if(currentTab==='hot') items=items.filter(c=>score(c)>=3);
   else if(currentTab==='top') items=items.filter(c=>(c.reactions?.like||0)+(c.reactions?.helpful||0)>=1);
@@ -41,8 +42,25 @@ function commentHtml(c,isReply){
   const r=c.reactions||{};const sc=score(c);const isHot=!isReply&&sc>=5;
   const rx=[r.like?`<span class="reaction reaction-like">👍 ${r.like}</span>`:'',r.helpful?`<span class="reaction reaction-helpful">💡 ${r.helpful}</span>`:'',r.funny?`<span class="reaction reaction-funny">😄 ${r.funny}</span>`:''].filter(Boolean).join('');
   const badges=[c.deleted?`<span class="badge badge-del">🗑 ${esc(c.deleted)}</span>`:'',isHot?`<span class="badge badge-hot">🔥${sc}</span>`:'',c._hiddenReplies?`<span class="badge badge-hidden">+${c._hiddenReplies} verborgen</span>`:''].filter(Boolean).join('');
+  const linksHtml=c.links?.length?`<div class="comment-links">🔗 ${c.links.map(l=>`<a href="${esc(l.url)}" target="_blank" rel="noopener noreferrer">${esc(l.text||l.url)}</a>`).join(' · ')}</div>`:'';
   const repliesHtml=c.replies?.length?c.replies.map(r=>commentHtml(r,true)).join(''):'';
-  return `<div class="${isReply?'comment-card reply-card':'comment-card'}"><div class="comment-header"><span class="comment-author">@${esc(c.author||'?')}</span><span class="comment-date">${esc(c.date||'')}</span>${c.replyCount>0&&!isReply?`<span class="badge badge-score">${c.replyCount} Replies</span>`:''} ${badges}</div><div class="comment-text${c.deleted?' deleted':''}">${esc(c.text||'(geloescht)')}</div>${rx?`<div class="reactions">${rx}</div>`:''}</div>${repliesHtml}`;
+  return `<div class="${isReply?'comment-card reply-card':'comment-card'}"><div class="comment-header"><span class="comment-author">@${esc(c.author||'?')}</span><span class="comment-date">${esc(c.date||'')}</span>${c.replyCount>0&&!isReply?`<span class="badge badge-score">${c.replyCount} Replies</span>`:''} ${badges}</div><div class="comment-text${c.deleted?' deleted':''}">${esc(c.text||'(geloescht)')}</div>${linksHtml}${rx?`<div class="reactions">${rx}</div>`:''}</div>${repliesHtml}`;
+}
+
+/* ── Linkliste pro Konversation (Tab "🔗 Links" + MD-Export) ── */
+function collectLinks(){
+  const out=[];
+  const walk=(c)=>{(c.links||[]).forEach(l=>out.push({author:c.author,date:c.date,id:c.id,url:l.url,text:l.text}));(c.replies||[]).forEach(walk);};
+  (deal.comments||[]).forEach(walk);
+  return out;
+}
+function renderLinks(){
+  const links=collectLinks();
+  const wrap=document.getElementById('comments-section');
+  wrap.innerHTML=links.length
+    ? `<div class="links-summary">${links.length} Links in dieser Konversation</div>`
+      + links.map(l=>`<div class="link-card"><a href="${esc(l.url)}" target="_blank" rel="noopener noreferrer" class="link-url">${esc(l.text||l.url)}</a><div class="link-meta">@${esc(l.author||'?')} · ${esc(l.date||'')}</div></div>`).join('')
+    : '<div style="padding:20px;color:var(--muted);text-align:center">Keine Links.</div>';
 }
 function setupTabs(){document.querySelectorAll('.tab').forEach(btn=>{btn.addEventListener('click',()=>{document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));btn.classList.add('active');currentTab=btn.dataset.tab;renderComments();});});}
 function setupSort(){document.querySelectorAll('.sort-btn').forEach(btn=>{btn.addEventListener('click',()=>{document.querySelectorAll('.sort-btn').forEach(b=>b.classList.remove('active'));btn.classList.add('active');currentSort=btn.dataset.sort;renderComments();});});}
@@ -67,6 +85,13 @@ function setupExport(){
 function buildMarkdown(){
   const{meta,comments,stats}=deal;
   const lines=[`# ${meta.title||'Deal'}`,`**URL:** ${meta.url}`,`**Kommentare:** ${stats.totalTopLevel}+${stats.totalRepliesVisible}`,stats.totalHiddenReplies>0?`⚠ ${stats.totalHiddenReplies} verborgen`:'',' ','---',' '];
+  if(meta.description){lines.push(meta.description,'','---',' ');}
+  const links=collectLinks();
+  if(links.length){
+    lines.push(`## 🔗 Links (${links.length})`,'');
+    links.forEach(l=>lines.push(`- @${l.author||'?'}: [${(l.text||l.url).replace(/[\[\]]/g,'').slice(0,100)}](${l.url})`));
+    lines.push('','---',' ');
+  }
   const walk=(c,d)=>{const p='  '.repeat(d);const sc=score(c);lines.push(`${p}**@${c.author}** (${c.date})${sc>=3?' 🔥':''}: ${(c.text||'(geloescht)')}`);if(c._hiddenReplies)lines.push(`${p}*(+${c._hiddenReplies} verborgen)*`);lines.push('');c.replies?.forEach(r=>walk(r,d+1));};
   comments.forEach(c=>walk(c,0));return lines.filter(Boolean).join('\n');
 }
