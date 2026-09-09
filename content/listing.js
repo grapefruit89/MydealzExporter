@@ -37,6 +37,8 @@ const THREAD_FIELDS = `
   user { username userId }
   merchant { merchantId merchantName }
   mainImage { uid path }
+  mainGroup { threadGroupId threadGroupName threadGroupUrlName }
+  groupsPath { threadGroupId threadGroupName threadGroupUrlName }
 `.trim();
 
 /* ── Strukturierter Logger (MDE:Listing) ──
@@ -318,6 +320,12 @@ async function fetchThreadsBatch(ids, onProgress) {
         merchant:       d.merchant?.merchantName || null,
         merchantId:     d.merchant?.merchantId  || null,
 
+        // Kategorie (autoritativ — Übersichtsseite zeigt teils veraltete Kategorie)
+        group:          d.mainGroup?.threadGroupName || null,
+        groupId:        d.mainGroup?.threadGroupId   || null,
+        groupUrlName:   d.mainGroup?.threadGroupUrlName || null,
+        groupPath:      (d.groupsPath || []).map(g => g.threadGroupName).filter(Boolean),
+
         // Bild
         imageUrl:       buildImageUrl(d.mainImage)
       });
@@ -445,6 +453,7 @@ function buildListMarkdown(exportObj) {
     const priceInfo = priceParts.join(' ');
 
     const metaParts = [
+      d.group ? `🏷 ${d.group}` : null,
       d.merchant ? `🏪 ${d.merchant}` : null,
       d.temperature != null ? `🔥 ${d.temperature}°` : null,
       d.commentCount != null ? `💬 ${d.commentCount}` : null,

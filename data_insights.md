@@ -93,6 +93,29 @@ aus dem HTML (`props.thread`) und die Pepper-AJAX-Endpunkte.
     automatisch auch für unsere AJAX-Extraseiten. Export protokolliert sie
     in `_meta.filters`.
 
+### Aus der Sammlung (Thread 2035404, Kommentar 53175634)
+
+*   **`mainGroup` / `groupsPath` sind die autoritative Kategorie.**
+    Übersichtsseiten zeigen teils die *ursprüngliche* Kategorie; mydealz zählt
+    intern die *aktuelle* `mainGroup`. Query-Shape (offizielle Variablen-Form):
+
+    ```graphql
+    query getThread($filter: IDFilter!) {
+      thread(threadId: $filter) {
+        title
+        mainGroup { threadGroupId threadGroupName }
+      }
+    }
+    ```
+
+    Übernommen in `listing.js` `THREAD_FIELDS` (Alias-Batch): `group`,
+    `groupId`, `groupUrlName`, `groupPath` (Breadcrumb-Kette) pro Deal.
+    Wichtig: Kategorie-Angaben auf Listenseiten sind nur bedingt vertrauenswürdig
+    (Um-Kategorisierungen). Anonym gegen `/graphql` geht das nicht — Session
+    (CSRF + Cookie) nötig, Fehlerantwort ist `{message:"Whiiiiiiieeee"}`.
+*   **ID-only-URL reicht:** `https://www.mydealz.de/<threadId>` vervollständigt
+    der Server zur kanonischen Slug-URL (vgl. `_dummy`-Erkenntnis oben).
+
 ### Verworfen
 
 *   **`/share-deal/{threadId}`** als Kurz-URL — antwortet mit 302 über
