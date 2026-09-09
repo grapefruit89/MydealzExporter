@@ -39,6 +39,8 @@ const THREAD_FIELDS = `
   mainImage { uid path }
   mainGroup { threadGroupId threadGroupName threadGroupUrlName }
   groupsPath { threadGroupId threadGroupName threadGroupUrlName }
+  shipping { isFree price }
+  updatedAt
 `.trim();
 
 /* ── Strukturierter Logger (MDE:Listing) ──
@@ -326,6 +328,11 @@ async function fetchThreadsBatch(ids, onProgress) {
         groupUrlName:   d.mainGroup?.threadGroupUrlName || null,
         groupPath:      (d.groupsPath || []).map(g => g.threadGroupName).filter(Boolean),
 
+        // Versand & Bearbeitung
+        shipping:       d.shipping?.price ?? null,        // null = unbekannt, 0 = frei
+        shippingFree:   d.shipping?.isFree === true,
+        updatedAt:      d.updatedAt ? new Date(d.updatedAt * 1000).toISOString() : null,
+
         // Bild
         imageUrl:       buildImageUrl(d.mainImage)
       });
@@ -456,6 +463,7 @@ function buildListMarkdown(exportObj) {
       d.group ? `🏷 ${d.group}` : null,
       d.merchant ? `🏪 ${d.merchant}` : null,
       d.temperature != null ? `🔥 ${d.temperature}°` : null,
+      d.shippingFree ? `📦 Versand frei` : (d.shipping != null ? `📦 Versand ${d.shipping}€` : null),
       d.commentCount != null ? `💬 ${d.commentCount}` : null,
       d.isExpired ? '❌ Abgelaufen' : '✅ Aktiv',
       d.author ? `👤 @${d.author}` : null
