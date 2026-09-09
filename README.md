@@ -142,6 +142,7 @@ Die Extension liest mydealz' strukturierte Datenlayer, nicht styling-abhängige 
 - **Rate-Limit bei HTTP 200 + HTML:** mydealz liefert bei Drosselung gelegentlich HTML statt JSON — wird aktuell als kryptischer Fehler geworfen (bekanntes Ticket, siehe `data_insights.md`)
 - **KI on-device:** `window.ai` ist Chrome-Preview — Verfügbarkeit hängt von Version/Hardware ab, der Cloud-Fallback fängt es auf
 - **Gutscheine/Diskussionen:** Preis-/Händler-Felder sind dort naturgemäß `null`
+- **Preis-Felder sind Community-Eintragungen:** `price`/`discountPct` sind das, was der Poster eingetippt hat — auf Freebies- und Coupon-Threads fehlen sie vollständig (Feldabdeckung je Kategorie 55–80 %), gelegentlich weichen sie vom Titeltext ab. Der Titel bleibt die menschenlesbare Quelle der Wahrheit
 
 ---
 

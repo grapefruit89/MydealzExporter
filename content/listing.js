@@ -41,6 +41,8 @@ const THREAD_FIELDS = `
   groupsPath { threadGroupId threadGroupName threadGroupUrlName }
   shipping { isFree price }
   updatedAt
+  voucherCode
+  temperatureLevel
 `.trim();
 
 /* ── Strukturierter Logger (MDE:Listing) ──
@@ -339,6 +341,10 @@ async function fetchThreadsBatch(ids, onProgress) {
         shippingFree:   d.shipping?.isFree === true,
         updatedAt:      d.updatedAt ? new Date(d.updatedAt * 1000).toISOString() : null,
 
+        // Gutschein & Temperatur-Klassifizierung (Feldnamen via studio-amba-Schema bestätigt)
+        voucherCode:    d.voucherCode || null,
+        temperatureLevel: d.temperatureLevel || null,     // "Hot2", "SuperHot", …
+
         // Bild
         imageUrl:       buildImageUrl(d.mainImage)
       });
@@ -495,6 +501,7 @@ function buildListMarkdown(exportObj) {
       d.group ? `🏷 ${d.group}` : null,
       d.merchant ? `🏪 ${d.merchant}` : null,
       d.temperature != null ? `🔥 ${d.temperature}°` : null,
+      d.voucherCode ? `🎟 ${d.voucherCode}` : null,
       d.shippingFree ? `📦 Versand frei` : (d.shipping != null ? `📦 Versand ${d.shipping}€` : null),
       d.commentCount != null ? `💬 ${d.commentCount}` : null,
       d.isExpired ? '❌ Abgelaufen' : '✅ Aktiv',
