@@ -269,6 +269,16 @@ new MutationObserver(() => {
 
 /* ── Thread-ID aus URL ── */
 function getThreadId() {
+  // 1. Robuste Quelle: #main[data-t-d] enthält threadId als JSON (URL-unabhängig,
+  //    überlebt Tracking-Params/Share-Links — Muster aus dem Sammlungs-Bookmarklet)
+  const main = document.getElementById('main');
+  if (main?.dataset?.tD) {
+    try {
+      const id = JSON.parse(main.dataset.tD.replace(/&quot;/g, '"')).threadId;
+      if (id) return String(id);
+    } catch { /* Fallback auf URL */ }
+  }
+  // 2. URL-Regex
   const m = window.location.href.match(/(?:deals|gutscheine|diskussion)\/[a-zA-Z0-9-]+-(\d+)/);
   return m ? m[1] : null;
 }
