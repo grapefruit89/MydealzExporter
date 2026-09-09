@@ -301,6 +301,7 @@ async function fetchThreadsBatch(ids, onProgress) {
         title:          d.title || '',
         description:    htmlToText(d.description),   // Plaintext
         descriptionHtml: d.description || '',         // Original-HTML
+        links:          extractLinks(d.description), // Links in der Beschreibung
 
         // Preise
         price:          d.price ?? null,
@@ -379,17 +380,39 @@ function getThreadIds() {
 const MAX_EXTRA_PAGES = 2;
 const EXTRA_PAGE_PAUSE_MS = 700;
 
-function parseThreadIdsFromHtml(html) {
+/* ── Vue3-Thread-Payloads aus HTML parsen (IDs + outbound deal-Link) ──
+   mydealz bettet die Thread-Daten in data-vue3-Attributen ein — dort steckt
+   auch `link`/`linkHost` (der echte Händler-Link, serverseitig gecloakt). */
+function parseVue3Threads(html) {
   const doc = new DOMParser().parseFromString(html, 'text/html');
-  const ids = [];
+  const out = [];
   for (const el of doc.querySelectorAll('[data-vue3]')) {
     try {
       const data = JSON.parse(el.getAttribute('data-vue3'));
       const t = data?.props?.thread;
-      if (t?.threadId && /^\d+$/.test(String(t.threadId))) ids.push(String(t.threadId));
+      if (t?.threadId && /^\d+$/.test(String(t.threadId))) {
+        const id = String(t.threadId);
+        const link = /^https?:\/\//.test(t.link || '')
+          ? t.link
+          : `${location.origin}/visit/threadmain/${id}`;   // kanonischer outbound-Pfad
+        out.push({ id, link, linkHost: t.linkHost || null });
+      }
     } catch { /* defektes Payload überspringen */ }
   }
-  return ids;
+  return out;
+}
+
+/* Outbound-Links sammeln: initiale Seite (DOM) + alle AJAX-Extraseiten */
+const _outboundIndex = new Map();   // threadId -> { link, linkHost }
+
+function indexOutboundFromDom() {
+  for (const t of parseVue3Threads(document.documentElement.outerHTML)) {
+    _outboundIndex.set(t.id, { link: t.link, linkHost: t.linkHost });
+  }
+}
+
+function parseThreadIdsFromHtml(html) {
+  return parseVue3Threads(html).map(t => t.id);
 }
 
 async function fetchExtraPageIds(pageNum, onProgress) {
@@ -409,7 +432,11 @@ async function fetchExtraPageIds(pageNum, onProgress) {
   if (text.trimStart().startsWith('{')) {
     try { html = JSON.parse(text)?.data?.content ?? ''; } catch { /* HTML-Fallback */ }
   }
-  return parseThreadIdsFromHtml(html);
+  const threads = parseVue3Threads(html);
+  for (const t of threads) {
+    if (t.link) _outboundIndex.set(t.id, { link: t.link, linkHost: t.linkHost });
+  }
+  return threads.map(t => t.id);
 }
 
 /* Sichtbare Seite + max. MAX_EXTRA_PAGES Folgeseiten, dedupliziert. */
@@ -599,6 +626,13 @@ function createWidget() {
       }
 
       const deals = await getDealsWithCache(ids, msg => { label.textContent = msg; });
+
+      // Outbound-Links (echter Händler-Link) aus den Vue-Payloads einhängen
+      indexOutboundFromDom();
+      for (const deal of deals) {
+        const ob = _outboundIndex.get(String(deal.id));
+        if (ob) { deal.outboundLink = ob.link; deal.outboundHost = ob.linkHost; }
+      }
 
       const sp = new URLSearchParams(window.location.search);
       const query = sp.get('q') || null;
