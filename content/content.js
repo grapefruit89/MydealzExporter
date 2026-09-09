@@ -261,6 +261,8 @@ new MutationObserver(() => {
       if (!buttons || _expanding) return;
       const n = await expandAllReplies(null);
       if (n) log.debug(`Auto-Ausklappen: ${n}× geklickt`);
+      const lbl = document.getElementById('mde-expand-label');
+      if (lbl && !countHiddenReplies().buttons) lbl.textContent = '💬 Alles sichtbar';
     }, 1200);
   }
 }).observe(document.documentElement, { childList: true, subtree: true });
