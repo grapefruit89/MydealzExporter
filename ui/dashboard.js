@@ -42,9 +42,10 @@ function commentHtml(c,isReply){
   const r=c.reactions||{};const sc=score(c);const isHot=!isReply&&sc>=5;
   const rx=[r.like?`<span class="reaction reaction-like">👍 ${r.like}</span>`:'',r.helpful?`<span class="reaction reaction-helpful">💡 ${r.helpful}</span>`:'',r.funny?`<span class="reaction reaction-funny">😄 ${r.funny}</span>`:''].filter(Boolean).join('');
   const badges=[c.deleted?`<span class="badge badge-del">🗑 ${esc(c.deleted)}</span>`:'',isHot?`<span class="badge badge-hot">🔥${sc}</span>`:'',c._hiddenReplies?`<span class="badge badge-hidden">+${c._hiddenReplies} verborgen</span>`:''].filter(Boolean).join('');
+  const orig=c.permalink?`<a class="comment-perma" href="${esc(c.permalink)}" target="_blank" rel="noopener noreferrer" title="Original-Kommentar auf mydealz öffnen">↗</a>`:'';
   const linksHtml=c.links?.length?`<div class="comment-links">🔗 ${c.links.map(l=>`<a href="${esc(l.url)}" target="_blank" rel="noopener noreferrer">${esc(l.text||l.url)}</a>`).join(' · ')}</div>`:'';
   const repliesHtml=c.replies?.length?c.replies.map(r=>commentHtml(r,true)).join(''):'';
-  return `<div class="${isReply?'comment-card reply-card':'comment-card'}"><div class="comment-header"><span class="comment-author">@${esc(c.author||'?')}</span><span class="comment-date">${esc(c.date||'')}</span>${c.replyCount>0&&!isReply?`<span class="badge badge-score">${c.replyCount} Replies</span>`:''} ${badges}</div><div class="comment-text${c.deleted?' deleted':''}">${esc(c.text||'(geloescht)')}</div>${linksHtml}${rx?`<div class="reactions">${rx}</div>`:''}</div>${repliesHtml}`;
+  return `<div class="${isReply?'comment-card reply-card':'comment-card'}"><div class="comment-header"><span class="comment-author">@${esc(c.author||'?')}</span><span class="comment-date">${esc(c.date||'')}</span>${c.replyCount>0&&!isReply?`<span class="badge badge-score">${c.replyCount} Replies</span>`:''} ${badges}${orig}</div><div class="comment-text${c.deleted?' deleted':''}">${esc(c.text||'(geloescht)')}</div>${linksHtml}${rx?`<div class="reactions">${rx}</div>`:''}</div>${repliesHtml}`;
 }
 
 /* ── Linkliste pro Konversation (Tab "🔗 Links" + MD-Export) ── */

@@ -99,6 +99,12 @@ const GQL = {
     if (!item) return null;
     const author = item.user?.username || null;
     const deleted = item.deletedBy ? (item.deletedBy.username || '(gelöscht)') : null;
+    // mydealz-interne Permalink-Formate (aus Sammlung 2035404):
+    // Hauptkommentar → #comment-<id>, Antwort → #reply-<id>
+    const base = location.origin + location.pathname;
+    const permalink = item.mainCommentId
+      ? `${base}#reply-${item.commentId}`
+      : `${base}#comment-${item.commentId}`;
     return {
       id:          item.commentId,
       parentId:    item.mainCommentId || null,
@@ -110,6 +116,7 @@ const GQL = {
       userDeleted: !deleted && /^GelöschterUser\d+$/.test(author || ''),
       reactions:   this.parseReactions(item.reactionCounts),
       links:       this.extractLinks(item.preparedHtmlContent),
+      permalink,
       replyCount:  item.replyCount || 0
     };
   },

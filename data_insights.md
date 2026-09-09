@@ -115,6 +115,17 @@ aus dem HTML (`props.thread`) und die Pepper-AJAX-Endpunkte.
     (CSRF + Cookie) nötig, Fehlerantwort ist `{message:"Whiiiiiiieeee"}`.
 *   **ID-only-URL reicht:** `https://www.mydealz.de/<threadId>` vervollständigt
     der Server zur kanonischen Slug-URL (vgl. `_dummy`-Erkenntnis oben).
+*   **Kommentar-Permalinks** (URL-Formate aus den „Starten statt warten"-Tools):
+    Hauptkommentar `...#comment-<id>`, Antwort `...#reply-<id>`; das alte
+    Format `/comments/permalink/<id>` funktioniert weiterhin. Übernommen:
+    `permalink`-Feld pro Kommentar im UC2-Export + „↗"-Link im Dashboard.
+*   **`?temperatureFrom=any`** — mydealz blendet auf Freebies/Gutscheinen per
+    Default alles unter 100° aus („nur Freebies ab 100 Grad"). Mit dem Param
+    sieht man alles; der Export kann nur zeigen, was die Seite anzeigt — also
+    bei Freebie-Exports merken, dass der Default-Filter vorher schon Deals
+    wegnimmt.
+*   **Widget hide/show-Endpunkte** (`/widgets/<name>/hide|show`) — rein kosmetisch,
+    kein Export-Nutzen. Nur dokumentiert.
 
 ### Verworfen
 
