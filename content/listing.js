@@ -202,6 +202,46 @@ function buildImageUrl(mainImage) {
   return `https://static.mydealz.de/${mainImage.path}/${mainImage.uid}/fs/895x577/qt/65/${mainImage.uid}`;
 }
 
+/* ── Fetch mit Retry/Backoff ──
+   Muster aus PepperDealsScraper (data_insights.md §4):
+   nur transiente Fehler wiederholen (408/429/5xx), 403/404 sofort aufgeben.
+   Exponentielles Backoff: 800ms → 1600ms. */
+const RETRY_STATUS = new Set([408, 429, 500, 502, 503, 504]);
+const RETRY_MAX_ATTEMPTS = 2;      // zusätzlich zum ersten Versuch
+const RETRY_BASE_DELAY_MS = 800;
+
+async function fetchWithRetry(url, options = {}, onProgress) {
+  let lastErr = null;
+
+  for (let attempt = 0; attempt <= RETRY_MAX_ATTEMPTS; attempt++) {
+    if (attempt > 0) {
+      const delay = RETRY_BASE_DELAY_MS * Math.pow(2, attempt - 1);
+      onProgress?.(`⏳ Retry in ${Math.round(delay / 1000)}s…`);
+      await new Promise(r => setTimeout(r, delay));
+      log.debug(`Retry ${attempt}/${RETRY_MAX_ATTEMPTS} für ${new URL(url, location.origin).pathname}`);
+    }
+
+    let res;
+    try {
+      res = await fetch(url, options);
+    } catch (err) {
+      lastErr = err;                       // Netzwerkfehler → Retry
+      continue;
+    }
+
+    if (res.ok) return res;
+
+    if (RETRY_STATUS.has(res.status) && attempt < RETRY_MAX_ATTEMPTS) {
+      lastErr = new Error(`HTTP ${res.status}`);
+      continue;
+    }
+    // 403/404 oder Versuche aufgebraucht → sofort werfen
+    throw new Error(`HTTP ${res.status}`);
+  }
+
+  throw lastErr || new Error('Fetch fehlgeschlagen');
+}
+
 /* ── GQL Batch-Anfrage mit Chunking (30er-Batches per Alias) ── */
 async function fetchThreadsBatch(ids, onProgress) {
   const CHUNK_SIZE = 30;
@@ -221,7 +261,7 @@ async function fetchThreadsBatch(ids, onProgress) {
       .map(id => `t${id}: thread(threadId: { eq: ${id} }) { ${THREAD_FIELDS} }`)
       .join('\n');
 
-    const res = await fetch('/graphql', {
+    const res = await fetchWithRetry('/graphql', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -229,9 +269,7 @@ async function fetchThreadsBatch(ids, onProgress) {
         'x-requested-with': 'XMLHttpRequest'
       },
       body: JSON.stringify({ query: `query { ${aliases} }` })
-    });
-
-    if (!res.ok) throw new Error(`GraphQL HTTP ${res.status}`);
+    }, onProgress);
     const json = await res.json();
     if (json.errors) log.gqlHints(json.errors);
 
@@ -339,7 +377,7 @@ function parseThreadIdsFromHtml(html) {
   return ids;
 }
 
-async function fetchExtraPageIds(pageNum) {
+async function fetchExtraPageIds(pageNum, onProgress) {
   const sp = new URLSearchParams(window.location.search);
   sp.delete('ajax');
   sp.delete('layout');
@@ -347,10 +385,9 @@ async function fetchExtraPageIds(pageNum) {
   sp.set('ajax', 'true');
   sp.set('layout', 'horizontal');
 
-  const res = await fetch(window.location.pathname + '?' + sp.toString(), {
+  const res = await fetchWithRetry(window.location.pathname + '?' + sp.toString(), {
     headers: { 'x-requested-with': 'XMLHttpRequest' }
-  });
-  if (!res.ok) throw new Error(`Listing-Page HTTP ${res.status}`);
+  }, onProgress);
 
   const text = await res.text();
   let html = text;
@@ -370,7 +407,7 @@ async function collectAllIds(onProgress) {
 
   for (let i = 1; i <= MAX_EXTRA_PAGES; i++) {
     onProgress?.(`⏳ Seite ${pageFrom + i}…`);
-    const ids = await fetchExtraPageIds(pageFrom + i);
+    const ids = await fetchExtraPageIds(pageFrom + i, onProgress);
     if (!ids.length) break;                      // Ende der Liste
     const before = all.length;
     for (const id of ids) if (!all.includes(id)) all.push(id);
