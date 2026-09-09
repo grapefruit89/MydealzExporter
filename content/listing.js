@@ -44,7 +44,6 @@ const THREAD_FIELDS = `
   voucherCode
   temperatureLevel
   type
-  nsfw
   keywordNames
   selectedLocations { isNational }
 `.trim();
@@ -351,7 +350,6 @@ async function fetchThreadsBatch(ids, onProgress) {
 
         // Klassifizierung (Raw-Payload-Shape via saswave-Actor offen)
         type:           d.type || null,                   // "Deal" | "Voucher" | …
-        nsfw:           d.nsfw === true,
         isNational:     d.selectedLocations?.isNational ?? null,  // lokal vs. bundesweit
         keywords:       d.keywordNames || null,
 
