@@ -55,3 +55,37 @@ Instead of the raw GraphQL dump (100+ lines per comment), our new scanner will p
 ```
 
 This reduces token usage by ~70% and maximizes context density.
+
+## 4. Externe Quellen: PepperDealsScraper (Referenz)
+
+**Repo:** https://github.com/amintikk/PepperDealsScraper
+Python-CLI-Scraper für 10 Pepper-Portale. Stand: live getestet am 2026-09-09 —
+funktioniert. Technik: keine CSS-Selektoren, sondern **`data-vue3`-Vue-Payloads**
+aus dem HTML (`props.thread`) und die Pepper-AJAX-Endpunkte.
+
+### Was wir übernommen haben
+
+| Technik | Details | Eingebaut in |
+|---|---|---|
+| **AJAX-Pagination** | `?page=N&ajax=true&layout=horizontal` → JSON-Wrapper `{ data: { content: "<html>" } }`; Thread-IDs aus `data-vue3`-Attributen (`props.thread.threadId`) | `listing.js` — „+2 Seiten"-Toggle, `collectAllIds()` / `fetchExtraPageIds()` |
+| **Rate-Limit-Disziplin** | max. 2 Extraseiten hart gedeckelt, 700 ms Pause zwischen Fetches, Abbruch bei leerer Seite | `listing.js` (`MAX_EXTRA_PAGES`, `EXTRA_PAGE_PAUSE_MS`) |
+
+### Verifiziert, aber nicht (yet) übernommen
+
+*   **`/deals/_dummy-{threadId}`** — Detail-URL ohne Slug, antwortet mit 301 auf
+    die kanonische Slug-URL. Nützlich, falls wir mal von einer reinen ID zur
+    kanonischen URL müssen. Wir lesen IDs aus dem DOM, daher aktuell ungenutzt.
+*   **`data-vue3` für First Paint** — das Initial-HTML enthält die Thread-Payloads
+    bereits im DOM; Basisfelder (Titel, Preis, Temperatur) ohne Netzwerk-Call
+    verfügbar. Unser GQL-Batch braucht nur 1–2 Requests, daher niedrige Prio.
+*   **Listen-Filter als URL-Params** — `priceFrom/priceTo`, `temperatureFrom/To`,
+    `groups[]`, `retailers[]`, `time_frame`, `super_hot` auf den Listing-URLs.
+    Kandidat für spätere „gefilterte Exporte".
+*   **`share-deal/{threadId}`** — stabile Kurz-URL, Kandidat für den MD-Export.
+
+### Bewusst nicht übernommen
+
+*   Cloudscraper/Proxy-Layer — wir laufen im eingeloggten Browser-Session-Kontext.
+*   Multi-Country-Support, CSV-Export, Bild-Download — außerhalb der zwei
+    eingefrorenen Use-Cases (siehe review_grok.md §11).
+*   Kein Kommentar-Support im Tool — unser GraphQL-Walker (§1) bleibt der Moat.
