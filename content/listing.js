@@ -216,10 +216,14 @@ const RETRY_BASE_DELAY_MS = 800;
 
 async function fetchWithRetry(url, options = {}, onProgress) {
   let lastErr = null;
+  let lastRes = null;
 
   for (let attempt = 0; attempt <= RETRY_MAX_ATTEMPTS; attempt++) {
     if (attempt > 0) {
-      const delay = RETRY_BASE_DELAY_MS * Math.pow(2, attempt - 1);
+      let delay = RETRY_BASE_DELAY_MS * Math.pow(2, attempt - 1);
+      // Server-Hinweis schlägt Eigen-Backoff (Muster aus dem alten Deep-State-Script)
+      const retryAfter = parseInt(lastRes?.headers?.get('Retry-After') || '', 10);
+      if (retryAfter > 0) delay = Math.max(delay, retryAfter * 1000);
       onProgress?.(`⏳ Retry in ${Math.round(delay / 1000)}s…`);
       await new Promise(r => setTimeout(r, delay));
       log.debug(`Retry ${attempt}/${RETRY_MAX_ATTEMPTS} für ${new URL(url, location.origin).pathname}`);
@@ -232,6 +236,7 @@ async function fetchWithRetry(url, options = {}, onProgress) {
       lastErr = err;                       // Netzwerkfehler → Retry
       continue;
     }
+    lastRes = res;
 
     if (res.ok) return res;
 

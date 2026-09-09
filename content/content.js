@@ -64,6 +64,14 @@ const GQL = {
     if (!html) return '';
     const tmp = document.createElement('div');
     tmp.innerHTML = html;
+    // Links inline als [label](href) erhalten (Muster aus dem alten Deep-State-Script) —
+    // sonst fallen sie beim innerText-Plaintext komplett weg
+    for (const a of tmp.querySelectorAll('a')) {
+      const href = a.getAttribute('href') || '';
+      const label = (a.textContent || '').trim() || 'Link';
+      const inline = href && !/^(javascript:|data:)/i.test(href) ? ` [${label}](${href}) ` : ` [${label}] `;
+      a.replaceWith(document.createTextNode(inline));
+    }
     return tmp.innerText.replace(/\n{3,}/g, '\n\n').trim();
   },
 
