@@ -583,13 +583,22 @@ function createWidget() {
 
       const deals = await getDealsWithCache(ids, msg => { label.textContent = msg; });
 
-      const query = new URLSearchParams(window.location.search).get('q') || null;
+      const sp = new URLSearchParams(window.location.search);
+      const query = sp.get('q') || null;
+
+      // mydealz-eigene Filter (Preis, Temperatur, Gruppe …) mitprotokollieren —
+      // gelten automatisch auch für die AJAX-Extraseiten
+      const filters = {};
+      for (const [k, v] of sp) {
+        if (!['ajax', 'layout', 'page'].includes(k)) filters[k] = v;
+      }
 
       const exportObj = {
         _meta: {
           exportedAt: new Date().toISOString(),
           source:     window.location.href,
           query,
+          filters:    Object.keys(filters).length ? filters : null,
           pageFrom,
           pageTo,
           dealCount:  deals.length

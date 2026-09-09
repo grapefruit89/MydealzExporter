@@ -78,10 +78,26 @@ aus dem HTML (`props.thread`) und die Pepper-AJAX-Endpunkte.
 *   **`data-vue3` für First Paint** — das Initial-HTML enthält die Thread-Payloads
     bereits im DOM; Basisfelder (Titel, Preis, Temperatur) ohne Netzwerk-Call
     verfügbar. Unser GQL-Batch braucht nur 1–2 Requests, daher niedrige Prio.
+
+### Übernommen (Batch 1–2, 2026-09-09)
+
+*   **AJAX-Pagination** → `listing.js` „+2 Seiten"-Toggle
+    (`collectAllIds()` / `fetchExtraPageIds()`), gedeckelt auf 2 Extraseiten
+    mit 700 ms Pause (Rate-Limit-Disziplin aus dem Tool).
+*   **Retry/Backoff** → `listing.js` `fetchWithRetry()`: nur transiente Fehler
+    (408/429/5xx) mit exponentiellem Backoff (800 ms → 1600 ms, max. 2 Retries),
+    403/404 werfen sofort. Gilt für GQL-Batch und AJAX-Pagination.
 *   **Listen-Filter als URL-Params** — `priceFrom/priceTo`, `temperatureFrom/To`,
-    `groups[]`, `retailers[]`, `time_frame`, `super_hot` auf den Listing-URLs.
-    Kandidat für spätere „gefilterte Exporte".
-*   **`share-deal/{threadId}`** — stabile Kurz-URL, Kandidat für den MD-Export.
+    `groups[]`, `retailers[]`, `time_frame`, `super_hot` (live verifiziert,
+    HTTP 200). mydealz-eigene Filter-UI setzen genau diese Params; sie gelten
+    automatisch auch für unsere AJAX-Extraseiten. Export protokolliert sie
+    in `_meta.filters`.
+
+### Verworfen
+
+*   **`/share-deal/{threadId}`** als Kurz-URL — antwortet mit 302 über
+    `app.adjust.com` (Tracking-Redirect). Für den MD-Export ungeeignet,
+    wir bleiben bei den kanonischen Slug-URLs.
 
 ### Bewusst nicht übernommen
 
