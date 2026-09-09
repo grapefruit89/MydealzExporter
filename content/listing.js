@@ -5,8 +5,10 @@
 
    Für jede Seite:
    1. Thread-IDs aus DOM-Artikeln lesen
-   2. Threads in 30er-Batches per GraphQL-Aliase holen (Chunking)
-   3. Wahlweise als JSON oder kompaktes Markdown exportieren
+   2. Optional +2 weitere Seiten via AJAX-Endpoint
+      (?page=N&ajax=true&layout=horizontal → data-vue3-Payloads)
+   3. Threads in 30er-Batches per GraphQL-Aliase holen (Chunking)
+   4. Wahlweise als JSON oder kompaktes Markdown exportieren
 
    GQL-Felder (alle live verifiziert):
      title, price, displayPrice, nextBestPrice, priceOff,
@@ -77,6 +79,120 @@ function htmlToText(html) {
   const tmp = document.createElement('div');
   tmp.innerHTML = html || '';
   return tmp.innerText.replace(/\n{3,}/g, '\n\n').trim();
+}
+
+/* ── HTML → Markdown (für descriptionMarkdown im MD-Export) ──
+   Kleiner Vanilla-Konverter für mydealz-Beschreibungen (Listen, Fett,
+   Links, Bilder, Blockquotes, Code). Kein DOMPurify — wir RENDEREN nicht,
+   wir serialisieren nur in reinen Text (kein XSS-Risiko im MD-File). */
+function htmlToMarkdown(html) {
+  if (!html) return '';
+
+  const tpl = document.createElement('template');
+  tpl.innerHTML = html;
+
+  const BLOCK_TAGS = new Set(['P', 'DIV', 'SECTION', 'ARTICLE', 'HEADER', 'FOOTER', 'MAIN', 'FIGURE', 'FIGCAPTION', 'DD', 'DT']);
+
+  function hasBlockChild(el) {
+    return [...el.children].some(c =>
+      BLOCK_TAGS.has(c.tagName) || /^H[1-6]$/.test(c.tagName) ||
+      ['UL', 'OL', 'TABLE', 'BLOCKQUOTE', 'PRE'].includes(c.tagName));
+  }
+
+  function inlineNodeMd(child) {
+    if (child.nodeType === Node.TEXT_NODE) return child.textContent.replace(/\s+/g, ' ');
+    if (child.nodeType !== Node.ELEMENT_NODE) return '';
+
+    const tag = child.tagName;
+    if (tag === 'SCRIPT' || tag === 'STYLE') return '';
+    if (tag === 'BR') return '\n';
+    if (tag === 'IMG') {
+      const src = child.getAttribute('src') || '';
+      return src ? `![${child.getAttribute('alt') || 'Bild'}](${src})` : '';
+    }
+
+    let inner = '';
+    for (const c of child.childNodes) inner += inlineNodeMd(c);
+    inner = inner.replace(/[^\S\n]+/g, ' ').trim();
+    if (!inner) return '';
+
+    if (tag === 'STRONG' || tag === 'B')      return `**${inner}**`;
+    if (tag === 'EM' || tag === 'I')          return `*${inner}*`;
+    if (tag === 'S' || tag === 'DEL' || tag === 'STRIKE') return `~~${inner}~~`;
+    if (tag === 'CODE')                       return `\`${inner}\``;
+    if (tag === 'A') {
+      const href = child.getAttribute('href') || '';
+      return href && !href.startsWith('javascript:') ? `[${inner}](${href})` : inner;
+    }
+    return inner;   // SPAN, U, SMALL, …: nur Inhalt
+  }
+
+  function inlineText(node) {
+    let out = '';
+    for (const child of node.childNodes) out += inlineNodeMd(child);
+    return out;
+  }
+
+  function listMd(list, depth) {
+    const pad = '  '.repeat(depth);
+    let out = '';
+    let idx = 1;
+    for (const li of list.children) {
+      if (li.tagName !== 'LI') continue;
+      const marker = list.tagName === 'OL' ? `${idx++}. ` : '- ';
+      const clone = li.cloneNode(true);
+      clone.querySelectorAll('ul, ol').forEach(n => n.remove());
+      out += pad + marker + inlineText(clone).trim() + '\n';
+      for (const sub of li.children) {
+        if (sub.tagName === 'UL' || sub.tagName === 'OL') out += listMd(sub, depth + 1);
+      }
+    }
+    return out;
+  }
+
+  function blockText(node, depth = 0) {
+    let out = '';
+    const pad = '  '.repeat(depth);
+
+    for (const child of node.childNodes) {
+      if (child.nodeType === Node.TEXT_NODE) {
+        if (child.textContent.trim()) out += pad + child.textContent.replace(/\s+/g, ' ').trim() + '\n\n';
+        continue;
+      }
+      if (child.nodeType !== Node.ELEMENT_NODE) continue;
+
+      const tag = child.tagName;
+      if (tag === 'SCRIPT' || tag === 'STYLE') continue;
+
+      if (/^H[1-6]$/.test(tag)) {
+        out += `${'#'.repeat(+tag[1])} ${inlineText(child).trim()}\n\n`;
+      } else if (tag === 'UL' || tag === 'OL') {
+        out += listMd(child, depth) + '\n';
+      } else if (tag === 'BLOCKQUOTE') {
+        const inner = blockText(child, 0).trim();
+        out += inner.split('\n').map(l => (l ? `> ${l}` : '>')).join('\n') + '\n\n';
+      } else if (tag === 'PRE') {
+        out += '```\n' + child.textContent.replace(/\n$/, '') + '\n```\n\n';
+      } else if (tag === 'TABLE') {
+        for (const tr of child.querySelectorAll('tr')) {
+          const cells = [...tr.children].map(td => inlineText(td).trim().replace(/\|/g, '\\|'));
+          if (cells.length) out += '| ' + cells.join(' | ') + ' |\n';
+        }
+        out += '\n';
+      } else if (tag === 'HR') {
+        out += '---\n\n';
+      } else if (hasBlockChild(child)) {
+        out += blockText(child, depth);
+      } else {
+        // Inline-Container (P, SPAN, A mit Bild, …) als ein Absatz
+        const t = inlineNodeMd(child).replace(/[^\S\n]+/g, ' ').trim();
+        if (t) out += pad + t + '\n\n';
+      }
+    }
+    return out;
+  }
+
+  return blockText(tpl.content).replace(/\n{3,}/g, '\n\n').trim();
 }
 
 /* ── Bild-URL aufbauen ── */
@@ -200,6 +316,72 @@ function getThreadIds() {
     .filter(id => /^\d+$/.test(id));
 }
 
+/* ── Multi-Page: zusätzliche Seiten via AJAX-Endpoint ──
+   Pepper-Listings liefern bei ?page=N&ajax=true&layout=horizontal ein
+   JSON-Objekt { data: { content: "<html>" } }. Die Thread-Daten stecken
+   dort in data-vue3-Attributen (props.thread) — genau wie im Initial-HTML.
+   Bewusst knapp gedeckelt (2 Extraseiten + Pause), um Rate-Limits/Bans
+   zu vermeiden. Die Deals selbst kommen weiterhin aus dem GQL-Batch
+   (volles Feldset inkl. description) — hier werden nur IDs gesammelt. */
+const MAX_EXTRA_PAGES = 2;
+const EXTRA_PAGE_PAUSE_MS = 700;
+
+function parseThreadIdsFromHtml(html) {
+  const doc = new DOMParser().parseFromString(html, 'text/html');
+  const ids = [];
+  for (const el of doc.querySelectorAll('[data-vue3]')) {
+    try {
+      const data = JSON.parse(el.getAttribute('data-vue3'));
+      const t = data?.props?.thread;
+      if (t?.threadId && /^\d+$/.test(String(t.threadId))) ids.push(String(t.threadId));
+    } catch { /* defektes Payload überspringen */ }
+  }
+  return ids;
+}
+
+async function fetchExtraPageIds(pageNum) {
+  const sp = new URLSearchParams(window.location.search);
+  sp.delete('ajax');
+  sp.delete('layout');
+  sp.set('page', String(pageNum));
+  sp.set('ajax', 'true');
+  sp.set('layout', 'horizontal');
+
+  const res = await fetch(window.location.pathname + '?' + sp.toString(), {
+    headers: { 'x-requested-with': 'XMLHttpRequest' }
+  });
+  if (!res.ok) throw new Error(`Listing-Page HTTP ${res.status}`);
+
+  const text = await res.text();
+  let html = text;
+  if (text.trimStart().startsWith('{')) {
+    try { html = JSON.parse(text)?.data?.content ?? ''; } catch { /* HTML-Fallback */ }
+  }
+  return parseThreadIdsFromHtml(html);
+}
+
+/* Sichtbare Seite + max. MAX_EXTRA_PAGES Folgeseiten, dedupliziert. */
+async function collectAllIds(onProgress) {
+  const visible = getThreadIds();
+  const all   = [...new Set(visible)];
+  const sp    = new URLSearchParams(window.location.search);
+  const pageFrom = parseInt(sp.get('page') || '1', 10) || 1;
+  let pageTo = pageFrom;
+
+  for (let i = 1; i <= MAX_EXTRA_PAGES; i++) {
+    onProgress?.(`⏳ Seite ${pageFrom + i}…`);
+    const ids = await fetchExtraPageIds(pageFrom + i);
+    if (!ids.length) break;                      // Ende der Liste
+    const before = all.length;
+    for (const id of ids) if (!all.includes(id)) all.push(id);
+    log.debug(`Extra-Seite ${pageFrom + i}: ${ids.length} IDs (${all.length - before} neu)`);
+    pageTo = pageFrom + i;
+    if (i < MAX_EXTRA_PAGES) await new Promise(r => setTimeout(r, EXTRA_PAGE_PAUSE_MS));
+  }
+
+  return { ids: all, pageFrom, pageTo };
+}
+
 /* ── Kompaktes Markdown generieren ── */
 function buildListMarkdown(exportObj) {
   const { _meta, deals } = exportObj;
@@ -236,8 +418,8 @@ function buildListMarkdown(exportObj) {
     lines.push(`### ${idx + 1}. [${d.title || `Deal #${d.id}`}](${d.url})`);
     if (priceInfo) lines.push(`- **Preis:** ${priceInfo}`);
     if (metaParts.length) lines.push(`- **Details:** ${metaParts.join(' · ')}`);
-    if (d.description) {
-      lines.push('', d.description.split('\n').map(l => `> ${l}`).join('\n'));
+    if (d.descriptionHtml || d.description) {
+      lines.push('', htmlToMarkdown(d.descriptionHtml) || d.description);
     }
     lines.push('', '---', '');
   });
@@ -317,52 +499,75 @@ function createWidget() {
   const btnJson = makeBtn('JSON', 'Deals als JSON herunterladen');
   const btnMd   = makeBtn('MD', 'Deals als Markdown herunterladen');
 
+  const btnPages = makeBtn('+2 Seiten', '2 weitere Seiten dazuladen (max. 2, vorsichtiger Modus)');
+  btnPages.style.background = '#475569';
+  let multiPage = false;
+  btnPages.addEventListener('click', () => {
+    multiPage = !multiPage;
+    btnPages.style.background = multiPage ? '#16a34a' : '#475569';
+  });
+
   container.appendChild(label);
   container.appendChild(btnJson);
   container.appendChild(btnMd);
+  container.appendChild(btnPages);
 
   const setBusy = (busy) => {
     btnJson.disabled = busy;
     btnMd.disabled   = busy;
+    btnPages.disabled = busy;
     btnJson.style.opacity = busy ? '.6' : '1';
     btnMd.style.opacity   = busy ? '.6' : '1';
+    btnPages.style.opacity = busy ? '.6' : '1';
   };
 
   const handleExport = async (format) => {
-    const ids = getThreadIds();
-    if (!ids.length) {
-      label.textContent = '⚠ Keine Deals';
-      setTimeout(() => { label.textContent = '📦 Deals'; }, 2000);
-      return;
-    }
-
     setBusy(true);
+    label.textContent = '📦 Deals…';
 
     try {
+      let ids, pageFrom, pageTo;
+
+      if (multiPage) {
+        ({ ids, pageFrom, pageTo } = await collectAllIds(msg => { label.textContent = msg; }));
+        if (!ids.length) {
+          label.textContent = '⚠ Keine Deals';
+          return;
+        }
+      } else {
+        ids = getThreadIds();
+        if (!ids.length) {
+          label.textContent = '⚠ Keine Deals';
+          return;
+        }
+        const p = new URLSearchParams(window.location.search).get('page');
+        pageFrom = pageTo = parseInt(p || '1', 10) || 1;
+      }
+
       const deals = await getDealsWithCache(ids, msg => { label.textContent = msg; });
 
-      const sp    = new URLSearchParams(window.location.search);
-      const query = sp.get('q') || null;
-      const page  = sp.get('page') || '1';
+      const query = new URLSearchParams(window.location.search).get('q') || null;
 
       const exportObj = {
         _meta: {
           exportedAt: new Date().toISOString(),
           source:     window.location.href,
           query,
-          page,
+          pageFrom,
+          pageTo,
           dealCount:  deals.length
         },
         deals
       };
 
       const safeName = (query || 'listing').replace(/[^\w\s-]/g, '').replace(/\s+/g, '_').slice(0, 40);
+      const pageSuffix = pageFrom === pageTo ? `p${pageFrom}` : `p${pageFrom}-p${pageTo}`;
 
       if (format === 'json') {
-        downloadFile(JSON.stringify(exportObj, null, 2), `mydealz_${safeName}_p${page}.json`, 'application/json;charset=utf-8');
+        downloadFile(JSON.stringify(exportObj, null, 2), `mydealz_${safeName}_${pageSuffix}.json`, 'application/json;charset=utf-8');
       } else if (format === 'md') {
         const md = buildListMarkdown(exportObj);
-        downloadFile(md, `mydealz_${safeName}_p${page}.md`, 'text/markdown;charset=utf-8');
+        downloadFile(md, `mydealz_${safeName}_${pageSuffix}.md`, 'text/markdown;charset=utf-8');
       }
 
       label.textContent = `✅ ${deals.length} exportiert`;
