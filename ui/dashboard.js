@@ -129,11 +129,22 @@ async function callAI(prompt,ctx){
       return await session.prompt(`${prompt}\n\n${ctx}`);
     }
   }
-  const{apiKey}=await new Promise(r=>chrome.storage.sync.get('apiKey',r));
-  if(!apiKey) throw new Error('Kein API-Key und Chrome-AI nicht verfuegbar.');
+  // API-Key aus storage.local (geminiApiKey aus Popup) mit Fallback auf storage.sync
+  const storageData = await new Promise(r => {
+    chrome.storage.local.get(['geminiApiKey', 'apiKey'], localRes => {
+      if (localRes?.geminiApiKey || localRes?.apiKey) return r(localRes);
+      chrome.storage.sync.get(['apiKey', 'geminiApiKey'], syncRes => r(syncRes || {}));
+    });
+  });
+  const apiKey = storageData?.geminiApiKey || storageData?.apiKey;
+  if(!apiKey) throw new Error('Kein API-Key hinterlegt und Chrome-AI nicht verfügbar.');
   const resp=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
     {method:'POST',headers:{'Content-Type':'application/json'},
      body:JSON.stringify({systemInstruction:{parts:[{text:'Du analysierst mydealz.de Deals. Antworte auf Deutsch.'}]},contents:[{parts:[{text:`${prompt}\n\n${ctx}`}]}]})});
+  if(!resp.ok){
+    const errJson = await resp.json().catch(()=>({}));
+    throw new Error(errJson.error?.message || `Gemini API HTTP ${resp.status}`);
+  }
   const json=await resp.json();
   const txt=json.candidates?.[0]?.content?.parts?.[0]?.text||json.error?.message;
   if(!txt) throw new Error(JSON.stringify(json));

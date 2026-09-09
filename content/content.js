@@ -17,6 +17,20 @@ const COMMENT_FIELDS = `
   reactionCounts { type count }
 `.trim();
 
+const log = {
+  _style: 'background:#16a34a;color:#fff;font-weight:700;padding:2px 6px;border-radius:4px;',
+  info(msg, ...args) {
+    console.info(`%cMDE:Detail%c ${msg}`, this._style, '', ...args);
+  },
+  debug(msg, ...args) {
+    console.debug(`%cMDE:Detail%c ${msg}`, this._style, '', ...args);
+  },
+  error(msg, err) {
+    const detail = err?.stack || err?.message || String(err);
+    console.error(`%cMDE:Detail%c ❌ ${msg}`, this._style, '', detail);
+  }
+};
+
 const GQL = {
 
   QUERY_TOPLEVEL: `
@@ -30,9 +44,12 @@ const GQL = {
 
   getXsrf() {
     const meta = document.querySelector('meta[name="csrf-token"]');
-    if (meta) return meta.getAttribute('content');
+    if (meta?.content) return meta.content;
     const m = document.cookie.match(/xsrf_t=([^;]+)/);
-    return m ? decodeURIComponent(m[1]) : null;
+    if (!m) return '';
+    let val = decodeURIComponent(m[1]);
+    if (val.startsWith('"') && val.endsWith('"')) val = val.slice(1, -1);
+    return val;
   },
 
   get headers() {
@@ -89,6 +106,7 @@ const GQL = {
       headers: this.headers,
       body: JSON.stringify({ query: `query { ${aliases} }` })
     });
+    if (!res.ok) throw new Error(`GraphQL HTTP ${res.status}`);
     const data = (await res.json()).data || {};
     // Map parentId -> replies[]
     const result = {};
@@ -111,6 +129,7 @@ const GQL = {
 
     if (onProgress) onProgress('Kommentare Seite 1...');
     const r1   = await fetch('/graphql', { method: 'POST', headers: this.headers, body: makeBody(1) });
+    if (!r1.ok) throw new Error(`GraphQL HTTP ${r1.status}`);
     const d1   = (await r1.json()).data;
     const all  = [...(d1?.comments?.items || [])];
     const last = d1?.comments?.pagination?.last || 1;
@@ -119,6 +138,7 @@ const GQL = {
       if (onProgress) onProgress(`Seite ${p}/${last}...`);
       await new Promise(r => setTimeout(r, 350));
       const rp = await fetch('/graphql', { method: 'POST', headers: this.headers, body: makeBody(p) });
+      if (!rp.ok) throw new Error(`GraphQL HTTP ${rp.status}`);
       all.push(...((await rp.json()).data?.comments?.items || []));
     }
     return all;
@@ -203,6 +223,7 @@ function extractMetadata() {
 
 /* ── Button ── */
 function injectButton() {
+  if (!getThreadId()) return;
   if (document.getElementById('mde-ai-btn')) return;
   const btn = document.createElement('button');
   btn.id = 'mde-ai-btn';
@@ -229,8 +250,16 @@ function injectButton() {
       lbl().textContent = `✅ ${stats.totalTopLevel}+${stats.totalRepliesVisible} Komm.`;
       btn.style.background = '#2563EB';
     } catch (err) {
-      console.error('[MDE]', err);
-      lbl().textContent = 'Fehler: ' + err.message.slice(0, 20);
+      log.error('Kommentar-Export fehlgeschlagen', err);
+
+      let uiMsg = 'Fehler aufgetreten';
+      if (err.message?.includes('XSRF') || err.message?.includes('CSRF')) uiMsg = 'Kein XSRF-Token';
+      else if (err.message?.includes('HTTP 429')) uiMsg = 'Rate-Limit (429)';
+      else if (err.message?.includes('HTTP 403')) uiMsg = 'Kein Zugriff (403)';
+      else if (err.message?.includes('Failed to fetch') || err.message?.includes('NetworkError')) uiMsg = 'Netzwerkfehler';
+      else if (err.message) uiMsg = err.message.slice(0, 20);
+
+      lbl().textContent = `❌ ${uiMsg}`;
       btn.style.background = '#DC2626';
     } finally {
       btn.disabled = false; btn.style.opacity = '1';
