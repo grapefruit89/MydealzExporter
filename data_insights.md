@@ -127,6 +127,24 @@ aus dem HTML (`props.thread`) und die Pepper-AJAX-Endpunkte.
 *   **Widget hide/show-Endpunkte** (`/widgets/<name>/hide|show`) — rein kosmetisch,
     kein Export-Nutzen. Nur dokumentiert.
 
+### Aus dem eigenen Vorgänger-Script (Deep-State AI Exporter v11–12.3)
+
+*   **`createdAtTs` bestätigt** — Kommentar-Zeitstempel ist ein Unix-Epoch-Integer
+    (`createdAtTs * 1000`), nicht der formatierte String. Bleibt geparkt mit
+    `wasEdited`/`isPinned` für die nächste COMMENT_FIELDS-Erweiterung.
+*   **Inline-Links im Kommentartext** → übernommen (`cleanText` ersetzt
+    `<a>` durch `[label](href)`-Textknoten; zusätzlich `links[]`-Array).
+*   **OP-Markierung** → übernommen (Dashboard: `👑 OP`-Badge bei Kommentaren
+    des Deal-/Diskussionsautors; Quelle: `meta.author`).
+*   **Retry-After-Header** → übernommen (429: Server-Hinweis schlägt Eigen-Backoff).
+*   **IndexedDB-Cache (1h TTL, pro Thread) + AbortController** → geparkt.
+    Der Cache ist das Usercript-Derivat vom geplanten `chrome.storage.session`
+    Payload; die zwei Zusatzideen für danach: „🔄 Force-Refresh"-Button wenn
+    Payload aus Cache stammt + Abbruch-Support bei sehr langen Exports.
+    Wichtig: In Content-Scripts gehört IndexedDB zur *Webseite* (mydealz-Origin),
+    nicht zur Extension — deshalb für die Extension `chrome.storage.session`
+    (SW-Pfad) statt IndexedDB.
+
 ### Verworfen
 
 *   **`/share-deal/{threadId}`** als Kurz-URL — antwortet mit 302 über
