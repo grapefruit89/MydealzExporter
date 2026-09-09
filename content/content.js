@@ -128,6 +128,26 @@ const GQL = {
     return result;
   },
 
+  /* Leichter Ping für die Button-Vorschau: nur Pagination, keine Items */
+  async fetchCommentMeta(threadId) {
+    const res = await fetch('/graphql', {
+      method: 'POST',
+      headers: this.headers,
+      body: JSON.stringify({
+        query: `query($filter: CommentFilter!, $limit: Int, $page: Int) {
+                  comments(filter: $filter, limit: $limit, page: $page) {
+                    pagination { count last }
+                  }
+                }`,
+        variables: { filter: { threadId: { eq: threadId } }, limit: 1, page: 1 }
+      })
+    });
+    if (!res.ok) throw new Error(`GraphQL HTTP ${res.status}`);
+    const p = (await res.json())?.data?.comments?.pagination;
+    if (!p) throw new Error('Keine Pagination-Antwort');
+    return { count: p.count || 0, last: p.last || 1 };
+  },
+
   /* Alle Top-Level-Kommentare paginiert holen */
   async fetchTopLevel(threadId, onProgress) {
     const makeBody = (page) => JSON.stringify({
@@ -248,6 +268,22 @@ function extractMetadata() {
   };
 }
 
+/* ── Button-Vorschau: Kommentaranzahl schon beim Laden anzeigen ── */
+let _commentMeta = null;
+
+async function refreshCommentMeta() {
+  const threadId = getThreadId();
+  if (!threadId) return;
+  const lbl = () => document.getElementById('mde-ai-label');
+  try {
+    const meta = await GQL.fetchCommentMeta(threadId);
+    _commentMeta = meta;
+    if (meta && lbl()) lbl().textContent = `${meta.count} Komm. · ${meta.last} Seiten`;
+  } catch (err) {
+    log.debug('Kommentar-Meta nicht verfügbar — Button bleibt im Default', err);
+  }
+}
+
 /* ── Button ── */
 function injectButton() {
   if (!getThreadId()) return;
@@ -290,10 +326,12 @@ function injectButton() {
       btn.style.background = '#DC2626';
     } finally {
       btn.disabled = false; btn.style.opacity = '1';
-      setTimeout(() => { lbl().textContent = 'Export & Analyse'; btn.style.background = '#16A34A'; }, 4000);
+      const reset = _commentMeta ? `${_commentMeta.count} Komm. · ${_commentMeta.last} Seiten` : 'Export & Analyse';
+      setTimeout(() => { lbl().textContent = reset; btn.style.background = '#16A34A'; }, 4000);
     }
   });
   document.body.appendChild(btn);
+  refreshCommentMeta();
 }
 
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', injectButton);
@@ -301,5 +339,9 @@ else injectButton();
 
 let _lastUrl = location.href;
 new MutationObserver(() => {
-  if (location.href !== _lastUrl) { _lastUrl = location.href; setTimeout(injectButton, 800); }
+  if (location.href !== _lastUrl) {
+    _lastUrl = location.href;
+    setTimeout(injectButton, 800);
+    setTimeout(refreshCommentMeta, 900);
+  }
 }).observe(document.documentElement, { childList: true, subtree: true });
