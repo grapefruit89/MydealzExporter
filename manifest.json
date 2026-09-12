@@ -16,7 +16,7 @@
   "content_scripts": [
     {
       "matches": ["https://www.mydealz.de/deals/*", "https://www.mydealz.de/gutscheine/*", "https://www.mydealz.de/diskussion/*"],
-      "js": ["content/link-share.js", "content/content.js"],
+      "js": ["content/link-share.js", "content/fetch-share.js", "content/content.js"],
       "run_at": "document_idle"
     },
     {
@@ -39,7 +39,7 @@
         "https://www.mydealz.de/gutscheine?*",
         "https://www.mydealz.de/?*"
       ],
-      "js": ["content/link-share.js", "content/listing.js"],
+      "js": ["content/link-share.js", "content/fetch-share.js", "content/listing.js"],
       "run_at": "document_idle"
     }
   ],

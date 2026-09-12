@@ -136,6 +136,12 @@ Die Extension liest mydealz' strukturierte Datenlayer, nicht styling-abhängige 
 
 ---
 
+## Nutzungshinweis (ToS)
+
+Dies ist ein **inoffizielles, persönliches Community-Tool** — keine offizielle mydealz-Funktion. mydealz untersagt Crawling in seinen Nutzungsbedingungen; die Extension automatisiert Zugriff mit der eigenen Session (GraphQL-Pagination, AJAX-Folgeseiten, Auto-Ausklappen). Bewusste Eingrenzung gegen die Massen-Export-Variante: max. 2 Extraseiten, Höflichkeitspausen, keine Cron-Loops, Export nur auf Nutzerklick.
+
+Konsequenz: **nutzen auf eigenes Risiko** (persönliche Nutzung, sinnvolles Tempo). Dieses Repo gehört nicht zu mydealz/Pepper und erhebt keinen Anspruch auf Duldung.
+
 ## Bekannte Grenzen
 
 - **Verborgene Replies:** Sehr tiefe Reply-Bäume kann die API deckeln (`_hiddenReplies`-Feld zeigt die Anzahl transparent im Dashboard)

@@ -3,6 +3,7 @@ let deal=null,currentTab='all',currentSort='default',currentFilter=null;
 const PROMPTS={summary:'Fasse den Deal und die Kommentare zusammen (5-7 Saetze). Was ist das Angebot, was sagen die Nutzer?',sentiment:'Stimmungsanalyse der Kommentare: positiv/negativ/gemischt. 3 konkrete Beispiele mit Kurzinhalten.',questions:'Welche Fragen, Probleme oder Unsicherheiten wurden erwaehnt? Als Stichpunkte.',highlights:'Die 5 wichtigsten Kommentare (Reaktionen/Replies/Inhalt). Erklaere kurz warum jeder wichtig ist.',problems:'Berichte ueber Probleme, Fehler, Warnungen? Alles kritische zusammenfassen.',verdict:'Lohnt sich der Deal? Pro/Contra-Liste und Fazit in 2 Saetzen.'};
 // Score: helpful*3 + replies*3 + like*2 + funny (mehr Replies = wichtigerer Kommentar)
 function score(c){const r=c.reactions||{};return(c.replyCount||0)*3+(r.helpful||0)*3+(r.like||0)*2+(r.funny||0);}
+function reactCount(c){const r=c.reactions||{};return(r.like||0)+(r.helpful||0)+(r.funny||0);}
 
 document.addEventListener('DOMContentLoaded',()=>{
   chrome.runtime.sendMessage({type:'GET_EXPORT_DATA'},data=>{
@@ -132,7 +133,7 @@ function commentLine(c,depth){
 }
 
 function relevantComments(){
-  return [...(deal.comments||[])].sort((a,b)=>score(b)-score(a)).filter(c=>!c.deleted&&(c.totalReactions>=1||c.replyCount>=1||(c.text||'').length>=50));
+  return [...(deal.comments||[])].sort((a,b)=>score(b)-score(a)).filter(c=>!c.deleted&&(reactCount(c)>=1||c.replyCount>=1||(c.text||'').length>=50));
 }
 
 function buildAIContext(prompt=''){
@@ -146,7 +147,7 @@ function buildAIContext(prompt=''){
 
   for(const c of filtered){
     const cLine=commentLine(c,0);
-    const rLines=(c.replies||[]).filter(r=>!r.deleted&&(r.totalReactions>=1||r.replyCount>=1||(r.text||'').length>=50)).map(r=>commentLine(r,1));
+    const rLines=(c.replies||[]).filter(r=>!r.deleted&&(reactCount(r)>=1||r.replyCount>=1||(r.text||'').length>=50)).map(r=>commentLine(r,1));
     const block=[cLine,...rLines].join('\n');
     if(chars+block.length>CONTEXT_LIMIT) break;
     lines.push('',block);chars+=block.length+2;included++;
@@ -194,7 +195,7 @@ async function runMapReduce(prompt,onStatus){
     const batchNum=Math.floor(i/BATCH)+1;const total=Math.ceil(filtered.length/BATCH);
     if(onStatus)onStatus(`Batch ${batchNum}/${total} zusammenfassen...`);
     const batchLines=[dealHeader(),'',`=== KOMMENTAR-BATCH ${batchNum}/${total} (${batch.length} Kommentare) ===`];
-    batch.forEach(c=>{batchLines.push('',commentLine(c,0));(c.replies||[]).filter(r=>!r.deleted&&(r.totalReactions>=1||r.replyCount>=1||(r.text||'').length>=50)).forEach(r=>batchLines.push(commentLine(r,1)));});
+    batch.forEach(c=>{batchLines.push('',commentLine(c,0));(c.replies||[]).filter(r=>!r.deleted&&(reactCount(r)>=1||r.replyCount>=1||(r.text||'').length>=50)).forEach(r=>batchLines.push(commentLine(r,1)));});
     const summary=await callAI(`Fasse diese ${batch.length} Kommentare in 3-4 Saetzen zusammen. Wichtige Punkte, Probleme, Themen:`,batchLines.join('\n'));
     summaries.push(`Batch ${batchNum}: ${summary}`);
   }

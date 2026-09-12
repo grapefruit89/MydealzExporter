@@ -121,12 +121,11 @@ const GQL = {
         items { ${REPLY_FIELDS} }
       }`
     ).join('\n');
-    const res = await fetch('/graphql', {
+    const res = await fetchWithRetry('/graphql', {
       method: 'POST',
       headers: this.headers,
       body: JSON.stringify({ query: `query { ${aliases} }` })
-    });
-    if (!res.ok) throw new Error(`GraphQL HTTP ${res.status}`);
+    }, null, true);
     const data = (await res.json()).data || {};
     // Map parentId -> replies[]
     const result = {};
@@ -138,7 +137,7 @@ const GQL = {
 
   /* Leichter Ping für die Button-Vorschau: nur Pagination, keine Items */
   async fetchCommentMeta(threadId) {
-    const res = await fetch('/graphql', {
+    const res = await fetchWithRetry('/graphql', {
       method: 'POST',
       headers: this.headers,
       body: JSON.stringify({
@@ -150,7 +149,6 @@ const GQL = {
         variables: { filter: { threadId: { eq: threadId } }, limit: 1, page: 1 }
       })
     });
-    if (!res.ok) throw new Error(`GraphQL HTTP ${res.status}`);
     const p = (await res.json())?.data?.comments?.pagination;
     if (!p) throw new Error('Keine Pagination-Antwort');
     return { count: p.count || 0, last: p.last || 1 };
@@ -168,7 +166,7 @@ const GQL = {
     });
 
     if (onProgress) onProgress('Kommentare Seite 1...');
-    const r1   = await fetch('/graphql', { method: 'POST', headers: this.headers, body: makeBody(1) });
+    const r1   = await fetchWithRetry('/graphql', { method: 'POST', headers: this.headers, body: makeBody(1) }, null, true);
     if (!r1.ok) throw new Error(`GraphQL HTTP ${r1.status}`);
     const d1   = (await r1.json()).data;
     const all  = [...(d1?.comments?.items || [])];
@@ -177,7 +175,7 @@ const GQL = {
     for (let p = 2; p <= last; p++) {
       if (onProgress) onProgress(`Seite ${p}/${last}...`);
       await new Promise(r => setTimeout(r, 350));
-      const rp = await fetch('/graphql', { method: 'POST', headers: this.headers, body: makeBody(p) });
+      const rp = await fetchWithRetry('/graphql', { method: 'POST', headers: this.headers, body: makeBody(p) }, null, true);
       if (!rp.ok) throw new Error(`GraphQL HTTP ${rp.status}`);
       all.push(...((await rp.json()).data?.comments?.items || []));
     }
