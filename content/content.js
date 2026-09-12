@@ -386,6 +386,7 @@ function injectButton() {
 
   const btn = makeBtn('#16A34A', '0 4px 20px rgba(22,163,74,.45)');
   btn.id = 'mde-ai-btn';
+  const lbl = () => document.getElementById('mde-ai-label');
   btn.innerHTML = '🧠 <span id="mde-ai-label">Export &amp; Analyse</span>';
   btn.addEventListener('mouseenter', () => btn.style.background = '#15803D');
   btn.addEventListener('mouseleave', () => btn.style.background = '#16A34A');
