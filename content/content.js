@@ -361,6 +361,26 @@ function countHiddenReplies() {
   return { hidden, buttons };
 }
 
+/* Sammelt den kompletten Export-Satz (Meta + Kommentare + Stats) —
+   gemeinsamer Pfad für Dashboard-Export und Direkt-Download */
+async function collectExport(threadId, onProgress) {
+  if (!threadId) throw new Error('Kein Thread');
+  const { comments, stats } = await GQL.fetchAll(threadId, onProgress);
+  const meta = extractMetadata();
+  return { meta, comments, stats };
+}
+
+/* Fehler → kurz, nutzerlesbar */
+function uiError(err) {
+  let uiMsg = 'Fehler aufgetreten';
+  if (err.message?.includes('XSRF') || err.message?.includes('CSRF')) uiMsg = 'Kein XSRF-Token';
+  else if (err.message?.includes('429') || err.message?.includes('HTML statt JSON')) uiMsg = 'Rate-Limit';
+  else if (err.message?.includes('HTTP 403')) uiMsg = 'Kein Zugriff (403)';
+  else if (err.message?.includes('Failed to fetch') || err.message?.includes('NetworkError')) uiMsg = 'Netzwerkfehler';
+  else if (err.message) uiMsg = err.message.slice(0, 24);
+  return uiMsg;
+}
+
 /* ── Button ── */
 function injectButton() {
   if (!getThreadId()) return;
@@ -395,22 +415,13 @@ function injectButton() {
     if (!threadId) { lbl().textContent = 'Kein Thread'; return; }
     btn.disabled = true; btn.style.opacity = '.7';
     try {
-      const { comments, stats } = await GQL.fetchAll(threadId, msg => { lbl().textContent = msg; });
-      const meta = extractMetadata();
-      chrome.runtime.sendMessage({ type: 'OPEN_DASHBOARD', payload: { meta, comments, stats } });
-      lbl().textContent = `✅ ${stats.totalTopLevel}+${stats.totalRepliesVisible} Komm.`;
+      const payload = await collectExport(threadId, msg => { lbl().textContent = msg; });
+      chrome.runtime.sendMessage({ type: 'OPEN_DASHBOARD', payload });
+      lbl().textContent = `✅ ${payload.stats.totalTopLevel}+${payload.stats.totalRepliesVisible} Komm.`;
       btn.style.background = '#2563EB';
     } catch (err) {
       log.error('Kommentar-Export fehlgeschlagen', err);
-
-      let uiMsg = 'Fehler aufgetreten';
-      if (err.message?.includes('XSRF') || err.message?.includes('CSRF')) uiMsg = 'Kein XSRF-Token';
-      else if (err.message?.includes('HTTP 429')) uiMsg = 'Rate-Limit (429)';
-      else if (err.message?.includes('HTTP 403')) uiMsg = 'Kein Zugriff (403)';
-      else if (err.message?.includes('Failed to fetch') || err.message?.includes('NetworkError')) uiMsg = 'Netzwerkfehler';
-      else if (err.message) uiMsg = err.message.slice(0, 20);
-
-      lbl().textContent = `❌ ${uiMsg}`;
+      lbl().textContent = `❌ ${uiError(err)}`;
       btn.style.background = '#DC2626';
     } finally {
       btn.disabled = false; btn.style.opacity = '1';
@@ -448,7 +459,57 @@ function injectButton() {
     expLbl().textContent = `💬 ${hidden || buttons} versteckt ausklappen`;
   }
 
+  const dlBtn = makeBtn('#1e293b', '0 4px 12px rgba(0,0,0,.25)');
+  dlBtn.id = 'mde-json-btn';
+  dlBtn.title = 'Alle Kommentare (inkl. Replies, Links, Permalinks) direkt als JSON herunterladen';
+  dlBtn.style.fontSize = '12px';
+  dlBtn.style.padding = '8px 14px';
+  dlBtn.innerHTML = '💾 <span id="mde-json-label">JSON</span>';
+  dlBtn.addEventListener('mouseenter', () => dlBtn.style.background = '#334155');
+  dlBtn.addEventListener('mouseleave', () => dlBtn.style.background = '#1e293b');
+  dlBtn.addEventListener('click', async () => {
+    const threadId = getThreadId();
+    if (!threadId) { document.getElementById('mde-json-label').textContent = 'Kein Thread'; return; }
+    dlBtn.disabled = true; dlBtn.style.opacity = '.7';
+    const dlLbl = () => document.getElementById('mde-json-label');
+    try {
+      const payload = await collectExport(threadId, msg => { dlLbl().textContent = msg; });
+
+      const exportObj = {
+        _meta: {
+          exportedAt: new Date().toISOString(),
+          source: payload.meta.url,
+          threadId
+        },
+        ...payload
+      };
+
+      const safeName = (payload.meta.title || 'thread')
+        .replace(/[^\w\s-]/g, '').replace(/\s+/g, '_').slice(0, 40);
+      const filename = `mydealz_kommentare_${safeName}.json`;
+
+      const blob = new Blob([JSON.stringify(exportObj, null, 2)], { type: 'application/json;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      dlLbl().textContent = `✅ ${payload.stats.totalTopLevel}+${payload.stats.totalRepliesVisible}`;
+    } catch (err) {
+      log.error('JSON-Download fehlgeschlagen', err);
+      dlLbl().textContent = `❌ ${uiError(err)}`;
+    } finally {
+      dlBtn.disabled = false; dlBtn.style.opacity = '1';
+      setTimeout(() => { dlLbl().textContent = 'JSON'; }, 4000);
+    }
+  });
+
   wrap.appendChild(btn);
+  wrap.appendChild(dlBtn);
   wrap.appendChild(expandBtn);
   document.body.appendChild(wrap);
   refreshCommentMeta();
