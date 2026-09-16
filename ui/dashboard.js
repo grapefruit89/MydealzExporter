@@ -4,6 +4,7 @@ const PROMPTS={summary:'Fasse den Deal und die Kommentare zusammen (5-7 Saetze).
 // Score: helpful*3 + replies*3 + like*2 + funny (mehr Replies = wichtigerer Kommentar)
 function score(c){const r=c.reactions||{};return(c.replyCount||0)*3+(r.helpful||0)*3+(r.like||0)*2+(r.funny||0);}
 function reactCount(c){const r=c.reactions||{};return(r.like||0)+(r.helpful||0)+(r.funny||0);}
+function tsOf(c){return c.createdAtTs||Date.parse(c.date||'')||0;}
 
 document.addEventListener('DOMContentLoaded',()=>{
   chrome.runtime.sendMessage({type:'GET_EXPORT_DATA'},data=>{
@@ -25,7 +26,8 @@ function renderStats(){
 
 function renderComments(){
   if(currentTab==='links'){renderLinks();return;}
-  let items=[...deal.comments];  if(currentTab==='hot') items=items.filter(c=>score(c)>=3);
+  let items=[...deal.comments];
+  if(currentTab==='hot') items=items.filter(c=>score(c)>=3);
   else if(currentTab==='top') items=items.filter(c=>(c.reactions?.like||0)+(c.reactions?.helpful||0)>=1);
   if(currentFilter==='replies') items=items.filter(c=>(c.replyCount||0)>0);
   else if(currentFilter==='reactions') items=items.filter(c=>((c.reactions?.like||0)+(c.reactions?.helpful||0)+(c.reactions?.funny||0))>0);
@@ -34,6 +36,7 @@ function renderComments(){
   else if(currentFilter==='funny') items=items.filter(c=>(c.reactions?.funny||0)>0);
   if(currentSort==='score') items.sort((a,b)=>score(b)-score(a));
   else if(currentSort==='replies') items.sort((a,b)=>(b.replyCount||0)-(a.replyCount||0));
+  else if(currentSort==='time-desc') items.sort((a,b)=>tsOf(b)-tsOf(a));
   // Volltextsuche: Text/Autor im Kommentar ODER in den Replies
   const q=(document.getElementById('comment-search')?.value||'').trim().toLowerCase();
   if(q){
@@ -41,7 +44,8 @@ function renderComments(){
     items=items.filter(hit);
   }
   const wrap=document.getElementById('comments-section');
-  wrap.innerHTML=items.length?items.map(c=>commentHtml(c,false)).join(''):`<div style="padding:20px;color:var(--muted);text-align:center">${q?`Keine Treffer für „${q}“.`:'Keine Kommentare.'}</div>`;
+  const banner=deal.incomplete?`<div class="incomplete-banner">⚠️ <b>Export unvollständig</b> — Rate-Limit-Antwort. Gesichert: ${deal.stats.totalTopLevel} Top-Level-Kommentare, ${deal.stats.totalRepliesVisible} Replies. Auf der Deal-Seite erneut exportieren, um fehlende Teile nachzuladen.</div>`:'';
+  wrap.innerHTML=banner+(items.length?items.map(c=>commentHtml(c,false)).join(''):`<div style="padding:20px;color:var(--muted);text-align:center">${q?`Keine Treffer für „${q}“.`:'Keine Kommentare.'}</div>`);
 }
 
 function commentHtml(c,isReply){
@@ -49,7 +53,7 @@ function commentHtml(c,isReply){
   const opAuthor=deal.meta?.author||null;
   const rx=[r.like?`<span class="reaction reaction-like">👍 ${r.like}</span>`:'',r.helpful?`<span class="reaction reaction-helpful">💡 ${r.helpful}</span>`:'',r.funny?`<span class="reaction reaction-funny">😄 ${r.funny}</span>`:''].filter(Boolean).join('');
   const isOp=c.isOp||(opAuthor&&c.author===opAuthor);
-  const badges=[c.deleted?`<span class="badge badge-del">🗑 ${esc(c.deleted)}</span>`:'',isHot?`<span class="badge badge-hot">🔥${sc}</span>`:'',c._hiddenReplies?`<span class="badge badge-hidden">+${c._hiddenReplies} verborgen</span>`:'',isOp?'<span class="badge badge-op">👑 OP</span>':''].filter(Boolean).join('');
+  const badges=[c.isPinned?'<span class="badge badge-pin">📌</span>':'',c.wasEdited?'<span class="badge badge-edited">✏️</span>':'',c.deleted?`<span class="badge badge-del">🗑 ${esc(c.deleted)}</span>`:'',isHot?`<span class="badge badge-hot">🔥${sc}</span>`:'',c._hiddenReplies?`<span class="badge badge-hidden">+${c._hiddenReplies} verborgen</span>`:'',isOp?'<span class="badge badge-op">👑 OP</span>':''].filter(Boolean).join('');
   const orig=c.permalink?`<a class="comment-perma" href="${esc(c.permalink)}" target="_blank" rel="noopener noreferrer" title="Original-Kommentar auf mydealz öffnen">↗</a>`:'';
   const linksHtml=c.links?.length?`<div class="comment-links">🔗 ${c.links.map(l=>`<a href="${esc(l.url)}" target="_blank" rel="noopener noreferrer">${esc(l.text||l.url)}</a>`).join(' · ')}</div>`:'';
   const repliesHtml=c.replies?.length?c.replies.map(r=>commentHtml({...r,isOp:opAuthor&&r.author===opAuthor},true)).join(''):'';
@@ -95,7 +99,7 @@ function setupExport(){
 }
 function buildMarkdown(){
   const{meta,comments,stats}=deal;
-  const lines=[`# ${meta.title||'Deal'}`,`**URL:** ${meta.url}`,`**Kommentare:** ${stats.totalTopLevel}+${stats.totalRepliesVisible}`,stats.totalHiddenReplies>0?`⚠ ${stats.totalHiddenReplies} verborgen`:'',' ','---',' '];
+  const lines=[`# ${meta.title||'Deal'}`,`**URL:** ${meta.url}`,`**Kommentare:** ${stats.totalTopLevel}+${stats.totalRepliesVisible}`,stats.totalHiddenReplies>0?`⚠ ${stats.totalHiddenReplies} verborgen`:'',deal.incomplete?`> ⚠️ **EXPORT UNVOLLSTÄNDIG** — Rate-Limit-Antwort. Gesichert: ${stats.totalTopLevel} Top-Level-Kommentare, ${stats.totalRepliesVisible} Replies.`:'',' ','---',' '];
   if(meta.description){lines.push(meta.description,'','---',' ');}
   const links=collectLinks();
   if(links.length){

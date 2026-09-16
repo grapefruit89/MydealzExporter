@@ -49,6 +49,9 @@ body{margin:0;background:var(--bg);color:var(--text);font:15px/1.6 'Inter',syste
 .badge-hidden{background:#a855f720;color:#a855f7}
 .badge-score{background:#22c55e15;color:var(--accent)}
 .badge-op{background:#22d3ee20;color:#0891b2}
+.badge-pin{background:#a1620720;color:#d97706}
+.badge-edited{background:#2563eb20;color:#3b82f6}
+.incomplete-banner{margin:0 0 10px;padding:10px 14px;border:1px solid #d9770650;background:#d9770610;border-radius:8px;color:#fbbf24;font-size:13px;line-height:1.5}
 .reactions{display:flex;gap:6px;margin-top:4px;flex-wrap:wrap}
 .reaction{font-size:11px;padding:2px 7px;border-radius:999px;font-weight:600}
 .reaction-like{background:#3b82f620;color:var(--like)}
@@ -106,6 +109,7 @@ body{margin:0;background:var(--bg);color:var(--text);font:15px/1.6 'Inter',syste
       <div class="sort-bar">
         Sortieren:
         <button class="sort-btn active" data-sort="default">Zeitlich</button>
+        <button class="sort-btn" data-sort="time-desc">Neueste ↓</button>
         <button class="sort-btn" data-sort="score">Score ↓</button>
         <button class="sort-btn" data-sort="replies">Replies ↓</button>
         <input id="comment-search" type="text" placeholder="🔍 Text/Autor suchen..." style="flex:1;min-width:120px;background:var(--surface2);border:1px solid var(--border);border-radius:999px;padding:4px 10px;color:var(--text);font-size:12px">
