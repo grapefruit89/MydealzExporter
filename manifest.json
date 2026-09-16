@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "MyDealz AI Exporter",
-  "version": "17.0",
+  "version": "17.1",
   "description": "Deal-Exporter & KI-Kommentar-Analyse für mydealz.de",
   "permissions": ["storage", "tabs", "clipboardWrite", "downloads"],
   "host_permissions": [

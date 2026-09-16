@@ -116,7 +116,7 @@ const GQL = {
   },
 
   /* Batched Reply-Fetch: bis zu 30 Parents per Request via Alias-Trick */
-  async fetchRepliesBatch(threadId, parentIds) {
+  async fetchRepliesBatch(threadId, parentIds, onProgress) {
     if (!parentIds.length) return {};
     const REPLY_FIELDS = COMMENT_FIELDS;
     const aliases = parentIds.map(pid =>
@@ -151,13 +151,14 @@ const GQL = {
                 }`,
         variables: { filter: { threadId: { eq: threadId } }, limit: 1, page: 1 }
       })
-    });
+    }, null, true, true);
     const p = (await res.json())?.data?.comments?.pagination;
     if (!p) throw new Error('Keine Pagination-Antwort');
     return { count: p.count || 0, last: p.last || 1 };
   },
 
-  /* Alle Top-Level-Kommentare paginiert holen */
+  /* Alle Top-Level-Kommentare paginiert holen — resilient: bricht eine
+     Seite nach Retry-Hard-Cap, wird Teil-Export gemeldet statt geworfen */
   async fetchTopLevel(threadId, onProgress) {
     const makeBody = (page) => JSON.stringify({
       query: this.QUERY_TOPLEVEL,
@@ -169,28 +170,51 @@ const GQL = {
     });
 
     if (onProgress) onProgress('Kommentare Seite 1...');
-    const r1   = await fetchWithRetry('/graphql', { method: 'POST', headers: this.headers, body: makeBody(1) }, null, true);
+    const r1   = await fetchWithRetry('/graphql', { method: 'POST', headers: this.headers, body: makeBody(1) }, onProgress, true, true);
     if (!r1.ok) throw new Error(`GraphQL HTTP ${r1.status}`);
     const d1   = (await r1.json()).data;
     const all  = [...(d1?.comments?.items || [])];
     const last = d1?.comments?.pagination?.last || 1;
+    const count = d1?.comments?.pagination?.count || 0;
+    let incomplete = false;
 
     for (let p = 2; p <= last; p++) {
-      if (onProgress) onProgress(`Seite ${p}/${last}...`);
+      // Prozent-Fortschritt: bereits geholte Roots gegen Gesamtzahl (Phase 1)
+      const pct = count ? Math.round(Math.min(all.length, count) / count * 100) : 0;
+      if (onProgress) onProgress(`Seite ${p}/${last} · ${pct} %`);
       await new Promise(r => setTimeout(r, 350));
-      const rp = await fetchWithRetry('/graphql', { method: 'POST', headers: this.headers, body: makeBody(p) }, null, true);
-      if (!rp.ok) throw new Error(`GraphQL HTTP ${rp.status}`);
-      all.push(...((await rp.json()).data?.comments?.items || []));
+      try {
+        const rp = await fetchWithRetry('/graphql', { method: 'POST', headers: this.headers, body: makeBody(p) }, onProgress, true, true);
+        if (!rp.ok) throw new Error(`GraphQL HTTP ${rp.status}`);
+        all.push(...((await rp.json()).data?.comments?.items || []));
+      } catch (err) {
+        log.error(`Top-Level Seite ${p} nicht erreichbar — Teil-Export`, err);
+        incomplete = true;
+        break;
+      }
     }
-    return all;
+    return { items: all, incomplete };
   },
 
-  /* Haupt-Funktion: alles holen */
+  /* Haupt-Funktion: alles holen — scheitert ein Teil, wird das Ergebnis
+     als Partial-Export markiert (incomplete) statt komplett weggeworfen */
   async fetchAll(threadId, onProgress) {
     if (!this.getXsrf()) throw new Error('Kein XSRF-Token - bitte einloggen!');
 
-    // 1. Top-Level-Kommentare
-    const rawItems = await this.fetchTopLevel(threadId, onProgress);
+    // 1. Top-Level-Kommentare (wirft nur bei komplettem Fehlschlag — Seite 1)
+    const topLevel = await this.fetchTopLevel(threadId, onProgress);
+    const rawItems = topLevel.items;
+    let incomplete = topLevel.incomplete;
+    const rawItemsCount = rawItems.length;
+
+    // Gesamtzahl Roots aus der Pagination (fetchCommentMeta, wenn nötig nachschärfen)
+    let count = rawItemsCount;
+    if (!incomplete) {
+      try {
+        const meta = await this.fetchCommentMeta(threadId);
+        count = meta.count || rawItemsCount;
+      } catch { count = rawItemsCount; }
+    }
 
     // 2. Identifiziere Parents die mehr Replies haben als im Preview
     const needMoreReplies = rawItems.filter(item => {
@@ -198,16 +222,27 @@ const GQL = {
       return (item.replyCount || 0) > previewLen;
     });
 
-    // 3. Lade fehlende Replies in Batches von 30
+    // 3. Lade fehlende Replies in Batches von 30 — resilient:
+    //    scheitert ein Batch trotz Retry-Hard-Cap, wird der Rest gesichert (Partial-Export)
     const BATCH = 30;
     const allReplies = {}; // parentId -> replies[]
-    for (let i = 0; i < needMoreReplies.length; i += BATCH) {
-      const batch = needMoreReplies.slice(i, i + BATCH);
-      const parentIds = batch.map(c => c.commentId);
-      if (onProgress) onProgress(`Replies Batch ${Math.floor(i/BATCH)+1}/${Math.ceil(needMoreReplies.length/BATCH)}...`);
-      const batchResult = await this.fetchRepliesBatch(threadId, parentIds);
-      Object.assign(allReplies, batchResult);
-      if (i + BATCH < needMoreReplies.length) await new Promise(r => setTimeout(r, 400));
+    const totalBatches = Math.ceil(needMoreReplies.length / BATCH);
+    const totalCount = count; // Gesamtzahl Roots aus der Pagination
+    let i = 0;
+    try {
+      for (i = 0; i < needMoreReplies.length; i += BATCH) {
+        const batch = needMoreReplies.slice(i, i + BATCH);
+        const parentIds = batch.map(c => c.commentId);
+        const batchNo = Math.floor(i / BATCH) + 1;
+        const pct = totalCount ? Math.round(rawItemsCount / totalCount * 100) : 100;
+        if (onProgress) onProgress(`Replies Batch ${batchNo}/${totalBatches} · Roots ${pct} %`);
+        const batchResult = await this.fetchRepliesBatch(threadId, parentIds, onProgress);
+        Object.assign(allReplies, batchResult);
+        if (i + BATCH < needMoreReplies.length) await new Promise(r => setTimeout(r, 400));
+      }
+    } catch (err) {
+      log.error('Reply-Batches unvollständig — Teil-Export', err);
+      incomplete = true;
     }
 
     // 4. Transformieren und Replies einhängen
@@ -245,8 +280,9 @@ const GQL = {
         funny:   sumReactions('funny')
       }
     };
+    if (incomplete) stats.incomplete = true;
 
-    return { comments, stats };
+    return { comments, stats, incomplete };
   }
 };
 
@@ -384,6 +420,24 @@ function uiError(err) {
   return uiMsg;
 }
 
+/* Läuft gerade ein Sammelvorgang? Erster Klick während eines
+   Retry-Countdowns = Force-Retry (FETCH_WAIT.skip). Buttons sind während
+   des Laufs bewusst NICHT disabled — sonst wäre der Force-Klick tot. */
+let _collectBusy = false;
+
+/* Geplanter Button-Klick-Einstieg für beide Aktionen */
+function clickGate() {
+  if (_collectBusy) {
+    if (FETCH_WAIT.active) {
+      FETCH_WAIT.skip = true;
+      log.info('Force-Retry: Countdown abgebrochen');
+    }
+    return false;
+  }
+  _collectBusy = true;
+  return true;
+}
+
 /* ── Button ── */
 function injectButton() {
   if (!getThreadId()) return;
@@ -416,18 +470,25 @@ function injectButton() {
   btn.addEventListener('click', async () => {
     const threadId = getThreadId();
     if (!threadId) { lbl().textContent = 'Kein Thread'; return; }
-    btn.disabled = true; btn.style.opacity = '.7';
+    if (!clickGate()) return;
+    btn.style.opacity = '.7';
     try {
       const payload = await collectExport(threadId, msg => { lbl().textContent = msg; });
       chrome.runtime.sendMessage({ type: 'OPEN_DASHBOARD', payload });
-      lbl().textContent = `✅ ${payload.stats.totalTopLevel}+${payload.stats.totalRepliesVisible} Komm.`;
-      btn.style.background = '#2563EB';
+      if (payload.incomplete) {
+        lbl().textContent = `⚠️ Teil-Export: ${payload.stats.totalTopLevel} Komm.`;
+        btn.style.background = '#D97706';
+      } else {
+        lbl().textContent = `✅ ${payload.stats.totalTopLevel}+${payload.stats.totalRepliesVisible} Komm.`;
+        btn.style.background = '#2563EB';
+      }
     } catch (err) {
       log.error('Kommentar-Export fehlgeschlagen', err);
       lbl().textContent = `❌ ${uiError(err)}`;
       btn.style.background = '#DC2626';
     } finally {
-      btn.disabled = false; btn.style.opacity = '1';
+      _collectBusy = false;
+      btn.style.opacity = '1';
       const reset = _commentMeta ? `${_commentMeta.count} Komm. · ${_commentMeta.last} Seiten` : 'Export & Analyse';
       setTimeout(() => { lbl().textContent = reset; btn.style.background = '#16A34A'; }, 4000);
     }
@@ -473,7 +534,8 @@ function injectButton() {
   dlBtn.addEventListener('click', async () => {
     const threadId = getThreadId();
     if (!threadId) { document.getElementById('mde-json-label').textContent = 'Kein Thread'; return; }
-    dlBtn.disabled = true; dlBtn.style.opacity = '.7';
+    if (!clickGate()) return;
+    dlBtn.style.opacity = '.7';
     const dlLbl = () => document.getElementById('mde-json-label');
     try {
       const payload = await collectExport(threadId, msg => { dlLbl().textContent = msg; });
@@ -482,7 +544,8 @@ function injectButton() {
         _meta: {
           exportedAt: new Date().toISOString(),
           source: payload.meta.url,
-          threadId
+          threadId,
+          ...(payload.incomplete ? { incomplete: true } : {})
         },
         ...payload
       };
@@ -501,12 +564,17 @@ function injectButton() {
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
 
-      dlLbl().textContent = `✅ ${payload.stats.totalTopLevel}+${payload.stats.totalRepliesVisible}`;
+      if (payload.incomplete) {
+        dlLbl().textContent = `⚠️ Teil: ${payload.stats.totalTopLevel}`;
+      } else {
+        dlLbl().textContent = `✅ ${payload.stats.totalTopLevel}+${payload.stats.totalRepliesVisible}`;
+      }
     } catch (err) {
       log.error('JSON-Download fehlgeschlagen', err);
       dlLbl().textContent = `❌ ${uiError(err)}`;
     } finally {
-      dlBtn.disabled = false; dlBtn.style.opacity = '1';
+      _collectBusy = false;
+      dlBtn.style.opacity = '1';
       setTimeout(() => { dlLbl().textContent = 'JSON'; }, 4000);
     }
   });
