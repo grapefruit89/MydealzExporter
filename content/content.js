@@ -193,7 +193,7 @@ const GQL = {
         break;
       }
     }
-    return { items: all, incomplete };
+    return { items: all, incomplete, count };
   },
 
   /* Haupt-Funktion: alles holen — scheitert ein Teil, wird das Ergebnis
@@ -207,14 +207,8 @@ const GQL = {
     let incomplete = topLevel.incomplete;
     const rawItemsCount = rawItems.length;
 
-    // Gesamtzahl Roots aus der Pagination (fetchCommentMeta, wenn nötig nachschärfen)
-    let count = rawItemsCount;
-    if (!incomplete) {
-      try {
-        const meta = await this.fetchCommentMeta(threadId);
-        count = meta.count || rawItemsCount;
-      } catch { count = rawItemsCount; }
-    }
+    // Exakter Root-Nenner: pagination.count aus der ersten Top-Level-Seitenantwort (gratis geliefert)
+    const count = topLevel.count || rawItemsCount;
 
     // 2. Identifiziere Parents die mehr Replies haben als im Preview
     const needMoreReplies = rawItems.filter(item => {
@@ -472,6 +466,7 @@ function injectButton() {
     if (!threadId) { lbl().textContent = 'Kein Thread'; return; }
     if (!clickGate()) return;
     btn.style.opacity = '.7';
+    btn.style.cursor = 'progress';   // Feedback: Fetch läuft (Klick = Force-Retry nur im Countdown)
     try {
       const payload = await collectExport(threadId, msg => { lbl().textContent = msg; });
       chrome.runtime.sendMessage({ type: 'OPEN_DASHBOARD', payload });
@@ -489,6 +484,7 @@ function injectButton() {
     } finally {
       _collectBusy = false;
       btn.style.opacity = '1';
+      btn.style.cursor = 'pointer';
       const reset = _commentMeta ? `${_commentMeta.count} Komm. · ${_commentMeta.last} Seiten` : 'Export & Analyse';
       setTimeout(() => { lbl().textContent = reset; btn.style.background = '#16A34A'; }, 4000);
     }
@@ -536,6 +532,7 @@ function injectButton() {
     if (!threadId) { document.getElementById('mde-json-label').textContent = 'Kein Thread'; return; }
     if (!clickGate()) return;
     dlBtn.style.opacity = '.7';
+    dlBtn.style.cursor = 'progress';
     const dlLbl = () => document.getElementById('mde-json-label');
     try {
       const payload = await collectExport(threadId, msg => { dlLbl().textContent = msg; });
@@ -575,6 +572,7 @@ function injectButton() {
     } finally {
       _collectBusy = false;
       dlBtn.style.opacity = '1';
+      dlBtn.style.cursor = 'pointer';
       setTimeout(() => { dlLbl().textContent = 'JSON'; }, 4000);
     }
   });
