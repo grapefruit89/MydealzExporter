@@ -10,7 +10,7 @@
 
 const COMMENT_FIELDS = `
   commentId mainCommentId threadId
-  preparedHtmlContent createdAt
+  preparedHtmlContent createdAt createdAtTs wasEdited isPinned
   deletedBy { username }
   replyCount
   user { username userId }
@@ -102,6 +102,9 @@ const GQL = {
       author,
       authorId:    item.user?.userId   || null,
       date:        item.createdAt      || null,
+      createdAtTs: item.createdAtTs    || null,
+      wasEdited:   !!item.wasEdited,
+      isPinned:    !!item.isPinned,
       text:        this.cleanText(item.preparedHtmlContent),
       deleted,                            // moderiert gelöscht (Moderator-Name)
       userDeleted: !deleted && /^GelöschterUser\d+$/.test(author || ''),
