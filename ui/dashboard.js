@@ -281,9 +281,18 @@ function collectLinks() {
   return out;
 }
 
+/* Lesbarer Dateiname: Umlaute ausschreiben, alles Nicht-Alphanumerische zu "_",
+   Titel auf 30 Zeichen kappen, Thread-ID als letzte Instanz anhängen. */
+function dealBasename() {
+  const base = String(deal?.meta?.title || 'deal')
+    .replace(/ä/g, 'ae').replace(/ö/g, 'oe').replace(/ü/g, 'ue').replace(/ß/g, 'ss')
+    .replace(/[^A-Za-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 30) || 'deal';
+  return `mydealz_${base}${deal?.meta?.threadId ? '_' + deal.meta.threadId : ''}`;
+}
+
 function setupExport() {
-  document.getElementById('btn-export-json').addEventListener('click', () => { download(exportJson(), 'mydealz-export.json', 'application/json'); flash('btn-export-json', '✅ Gestartet!'); });
-  document.getElementById('btn-export-md').addEventListener('click', () => { download(buildMarkdown(), 'mydealz-export.md', 'text/markdown'); flash('btn-export-md', '✅ Gestartet!'); });
+  document.getElementById('btn-export-json').addEventListener('click', () => { download(exportJson(), dealBasename() + '.json', 'application/json'); flash('btn-export-json', '✅ Gestartet!'); });
+  document.getElementById('btn-export-md').addEventListener('click', () => { download(buildMarkdown(), dealBasename() + '.md', 'text/markdown'); flash('btn-export-md', '✅ Gestartet!'); });
   document.getElementById('btn-copy-md').addEventListener('click', async () => { await navigator.clipboard.writeText(buildMarkdown()); flash('btn-copy-md', '✅ Kopiert!'); });
   document.getElementById('btn-copy').addEventListener('click', async () => { await navigator.clipboard.writeText(exportJson()); flash('btn-copy', '✅ Kopiert!'); });
   document.getElementById('ai-copy-btn').addEventListener('click', async () => { await navigator.clipboard.writeText(document.getElementById('ai-output').textContent); flash('ai-copy-btn', '✅'); });

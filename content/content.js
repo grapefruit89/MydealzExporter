@@ -944,9 +944,8 @@ function injectButton() {
     try {
       const payload = await collectExport(threadId, msg => { dlLbl().textContent = msg; });
 
-      const safeName = (payload.meta.title || 'thread')
-        .replace(/[^\w\s-]/g, '').replace(/\s+/g, '_').slice(0, 40);
-      const filename = `mydealz_kommentare_${safeName}.json`;
+      const safeName = (payload.meta.title || 'thread').replace(/[^\w\s-]/g, '').replace(/\s+/g, '_').slice(0, 30);
+      const filename = `mydealz_${safeName}_${threadId}.json`;
 
       const blob = new Blob([payload.jsonString], { type: 'application/json;charset=utf-8' });
       const url = URL.createObjectURL(blob);

@@ -766,14 +766,23 @@ function createWidget() {
         deals
       };
 
-      const safeName = (query || 'listing').replace(/[^\w\s-]/g, '').replace(/\s+/g, '_').slice(0, 40);
+      /* Dateiname aus dem Seitenkontext: Suche → Gruppe → Fallback "deals".
+         clean() entfernt Sonderzeichen, macht aus Trenner/Leerzeichen "_" und
+         kappt auf 30 Zeichen — lesbar und dateisystemtauglich. */
+      const clean = s => String(s || '')
+        .replace(/[^\w\s-]/g, '').replace(/[\s-]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 30);
+      const groupMatch = location.pathname.match(/\/(?:gruppe|group)\/([^/]+)/);
+      const contextName = query ? `suche_${clean(query)}`
+        : groupMatch ? `gruppe_${clean(decodeURIComponent(groupMatch[1]))}`
+        : 'deals';
       const pageSuffix = pageFrom === pageTo ? `p${pageFrom}` : `p${pageFrom}-p${pageTo}`;
+      const baseName = `mydealz_${contextName}_${pageSuffix}`;
 
       if (format === 'json') {
-        downloadFile(JSON.stringify(exportObj, null, 2), `mydealz_${safeName}_${pageSuffix}.json`, 'application/json;charset=utf-8');
+        downloadFile(JSON.stringify(exportObj, null, 2), `${baseName}.json`, 'application/json;charset=utf-8');
       } else if (format === 'md') {
         const md = buildListMarkdown(exportObj);
-        downloadFile(md, `mydealz_${safeName}_${pageSuffix}.md`, 'text/markdown;charset=utf-8');
+        downloadFile(md, `${baseName}.md`, 'text/markdown;charset=utf-8');
       }
 
       lbl().textContent = `✅ ${deals.length} exportiert`;
