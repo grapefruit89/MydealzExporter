@@ -505,8 +505,7 @@
         ],
         "statsField": "stats.authorCommentCount",
         "idsField": "stats.authorCommentIds",
-        "indexField": "stats.userIndex[]",
-        "nodeFields": ["isAuthor", "authorSeq", "authorTotal", "authorRefs"]
+        "nodeFields": ["isAuthor"]
       },
       "validation": {
         "regex": "^Autor(\\*in)?$",

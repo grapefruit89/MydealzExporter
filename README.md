@@ -119,8 +119,8 @@ Beide Formate beschreiben denselben Thread — sie haben nur unterschiedliche Le
 ### Warum nicht einfach „JSON mit Objekten"?
 
 Der naive Weg wäre ein Objektbaum: jedes Kommentarobjekt trägt seine Schlüssel
-(`id`, `parentId`, `level`, `author`, `isAuthor`, `date`, `score`, `text`,
-`authorRefs`) erneut, dazu Klammern, Anführungszeichen und Einrückung. Bei
+(`id`, `parentId`, `level`, `author`, `isAuthor`, `date`, `score`, `rx`,
+`edited`, `text`) erneut, dazu Klammern, Anführungszeichen und Einrückung. Bei
 hunderten Kommentaren wiederholt sich diese Syntax hunderte Male und frisst
 **über 60 % des LLM-Kontextfensters** für Boilerplate statt für Inhalt.
 Genau dieser Befund steht als Kommentar am Spaltenvertrag in
@@ -129,36 +129,36 @@ Genau dieser Befund steht als Kommentar am Spaltenvertrag in
 ### Das Format: Schema einmal, Daten als Tupel
 
 Die Columnar-Tuple-Matrix (inspiriert vom **DIN-BriefNEO**-Muster und
-`[anchor:deep-modules]`) dreht das um: Der Vertrag steht **genau einmal** oben,
+`[Deep Module]`) dreht das um: Der Vertrag steht **genau einmal** oben,
 danach folgen nur noch Werte.
 
 1. **`_llm.columns`** — die Spaltenreihenfolge, exakt einmal deklariert:
-   `[id, parentId, level, author, isAuthor, date, score, text, authorRefs]`.
+   `[id, parentId, level, author, isAuthor, date, score, rx, edited, text]`.
 2. **`_llm`-Guide** — selbsterklärender Vertragskopf mit semantischen Anchors
-   (`[anchor:ssot-principle]`, `[anchor:separation-of-concerns]`,
-   `[anchor:deep-modules]`), Ziel, Formatname und einer Kurzbeschreibung je Spalte
-   (`column_guide`): `parentId: null` = Top-Level, `level` 0–4, `isAuthor: true`
-   = verbindliche Statusmeldung des Dealerstellers, `score` = gewichteter
-   Community-Score (helpful×3 + replies×3 + like×2 + funny), `authorRefs` =
-   weitere Kommentar-IDs desselben Nutzers.
+   (`[SSOT]`, `[Separation of Concerns]`, `[Deep Module]`), Ziel, Formatname
+   und einer Kurzbeschreibung je Spalte (`column_guide`): `parentId: null` = Top-Level,
+   `level` 0–4, `isAuthor: true` = verbindliche Statusmeldung des Dealerstellers,
+   `score` = gewichteter Community-Score, `rx` = `[like, helpful, funny]` Reaktionen
+   getrennt für präzise Signal-Filterung, `edited` = boolean Korrektur-Flag.
 3. **`comments`** — die Matrix selbst: eine Zeile pro Kommentar, Pre-order
    (Eltern vor Kindern), ohne einen einzigen wiederholten Schlüssel:
 
 ```json
 {
   "_llm": {
-    "format": "columnar-matrix [anchor:deep-modules]",
-    "columns": ["id", "parentId", "level", "author", "isAuthor", "date", "score", "text", "authorRefs"],
+    "format": "columnar-matrix [Deep Module]",
+    "columns": ["id", "parentId", "level", "author", "isAuthor", "date", "score", "rx", "edited", "text"],
     "column_guide": {
       "id": "Eindeutige Kommentar-ID",
       "parentId": "Eltern-ID (null bei Top-Level)",
-      "score": "Gewichteter Community-Score (helpful*3 + replies*3 + like*2 + funny)"
+      "score": "Gewichteter Community-Score (helpful*3 + replies*3 + like*2 + funny)",
+      "rx": "[like, helpful, funny] Reaktionen getrennt"
     }
   },
   "comments": [
-    [57123456, null,           0, "dealhunter", true,  "2026-11-24T09:12", 18, "Preis ist wieder da.", [57123499]],
-    [57123499, 57123456,       1, "schnaeppchen", false, "2026-11-24T09:20",  6, "Danke, direkt bestellt.", []],
-    [57123510, 57123456,       1, "sparfuchs",  false, "2026-11-24T09:31",  2, "Versandkosten?", []]
+    [57123456, null,     0, "dealhunter",   true,  "2026-11-24T09:12", 18, [2, 4, 0], false, "Preis ist wieder da."],
+    [57123499, 57123456, 1, "schnaeppchen", false, "2026-11-24T09:20",  6, [3, 0, 0], false, "Danke, direkt bestellt."],
+    [57123510, 57123456, 1, "sparfuchs",    false, "2026-11-24T09:31",  2, [1, 0, 0], true,  "Versandkosten jetzt frei."]
   ]
 }
 ```

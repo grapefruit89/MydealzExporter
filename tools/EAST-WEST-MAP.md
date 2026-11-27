@@ -201,7 +201,7 @@ Diese Matrix dient Maintainern und KI-Agenten als **semantischer Anker** und **G
 * **DOM Primär:** `span.textBadge` (bzw. `[class*="textBadge"]`) mit normalisiertem Text `Autor*in`; Container `li.commentList-item[data-id]` / `div.comment-replies-item[data-id]`, ID aus `data-id`.
 * **DOM-Grenze:** Das Badge wird **clientseitig** gerendert (im Server-HTML 0 Treffer, gemessen 2026-11-27) und existiert **nicht** im GraphQL-Schema.
 * **GraphQL-Ableitung:** `isAuthor = comment.user.userId === thread.user.userId` (primär) ODER `comment.user.username === thread.user.username` (Fallback) ODER DOM-Badge am Kommentar.
-* **Client-Felder:** `comment.isAuthor`, `authorSeq`/`authorTotal` (Position in den Beiträgen des Nutzers), `authorRefs[]` (IDs aller anderen Beiträge desselben Nutzers → Cross-Linking), `stats.authorCommentCount`, `stats.authorCommentIds[]`, `stats.userIndex[]`.
+* **Client-Felder:** `comment.isAuthor`, `stats.authorCommentCount`, `stats.authorCommentIds[]`. (Redundante Felder `userIndex` und `authorRefs` wurden zugunsten Token-Effizienz eliminiert).
 * **Validierung:** `^Autor(\*in)?$`; Gegenprobe: `authorCommentCount > 0` genau dann, wenn mindestens ein Kommentar das Badge trägt oder die userId matcht.
 * **KI-Recovery:** Immer über die Nutzer-ID gehen, nicht über die DOM-Position. Nur wenn weder `thread.user.userId` noch `thread.user.username` verfügbar sind, das DOM-Badge per `closest('[data-id]')` auswerten.
 

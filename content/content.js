@@ -119,14 +119,14 @@ async function fetchWithRetry(url, options = {}, onProgress, expectJson = false,
 }
 // #endregion shared-bootstrap
 
-/* ── Columnar-Tuple-Matrix: einziger Serialisierer ([anchor:ssot-principle]).
+/* ── Columnar-Tuple-Matrix: einziger Serialisierer ([SSOT]).
    ui/dashboard.js liest nur payload.jsonString. */
-const COLUMNAR_COLUMNS = ['id', 'parentId', 'level', 'author', 'isAuthor', 'date', 'score', 'text', 'authorRefs'];
+const COLUMNAR_COLUMNS = ['id', 'parentId', 'level', 'author', 'isAuthor', 'date', 'score', 'rx', 'edited', 'text'];
 
 const LLM_GUIDE = {
   target: 'E-Commerce Deal & Community Thread Analysis',
-  format: 'columnar-matrix [anchor:deep-modules]',
-  anchors: ['[anchor:ssot-principle]', '[anchor:separation-of-concerns]', '[anchor:deep-modules]'],
+  format: 'columnar-matrix [Deep Module]',
+  anchors: ['[SSOT]', '[Separation of Concerns]', '[Deep Module]'],
   description: 'Hocheffizienter Token-optimierter Columnar-Export für LLMs. Kommentare liegen als flache Tuple-Matrix ohne redundante Keys vor.',
   columns: COLUMNAR_COLUMNS,
   column_guide: {
@@ -137,8 +137,9 @@ const LLM_GUIDE = {
     isAuthor: 'true = Dealersteller (verbindliche Status-Meldungen zu Preis/Gutschein)',
     date: 'Zeitstempel',
     score: 'Gewichteter Community-Score (helpful*3 + replies*3 + like*2 + funny)',
-    text: 'Kommentartext',
-    authorRefs: 'Weitere Kommentar-IDs desselben Nutzers für sofortige Dialogverfolgung'
+    rx: '[like, helpful, funny] Reaktionen getrennt für Signal-Filterung',
+    edited: 'true = Nachträglich bearbeitet (Korrekturen/Updates)',
+    text: 'Kommentartext'
   }
 };
 
@@ -156,8 +157,9 @@ function flattenToColumnar(comments) {
       Boolean(c.isAuthor),
       c.date || '',
       sc,
-      c.text || '',
-      c.authorRefs || []
+      [rx.like || 0, rx.helpful || 0, rx.funny || 0],
+      Boolean(c.wasEdited),
+      c.text || ''
     ]);
     (c.replies || []).forEach(walk);
   };
@@ -545,10 +547,9 @@ function flattenComments(comments) {
   return out;
 }
 
-/* Setzt isAuthor/authorSeq/authorRefs und die Autor-Statistik (Cross-Linking). */
+/* Setzt isAuthor und sammelt Autor-Statistiken (ohne redundanten userIndex-Ballast). */
 function annotateAuthors(comments, meta) {
   const nodes = flattenComments(comments);
-  const nodeById = new Map(nodes.map(n => [String(n.id), n]));
   const domIds = collectDomAuthorIds();
   const authorName = meta?.author || null;
 
@@ -566,42 +567,20 @@ function annotateAuthors(comments, meta) {
   if (!authorId && authorName && idByName.has(authorName)) authorId = idByName.get(authorName);
   if (meta) meta.authorId = authorId;
 
-  const byUser = new Map();
   for (const n of nodes) {
-    if (!n.author) continue;
-    const key = n.authorId ? `id:${n.authorId}` : `name:${n.author}`;
-    if (!byUser.has(key)) byUser.set(key, { author: n.author, authorId: n.authorId || null, ids: [] });
-    byUser.get(key).ids.push(String(n.id));
-  }
-
-  for (const n of nodes) {
-    const key = n.author ? (n.authorId ? `id:${n.authorId}` : `name:${n.author}`) : null;
-    const ids = (key && byUser.get(key)?.ids) || [];
-    const pos = ids.indexOf(String(n.id));
     n.isAuthor = Boolean(
       (authorId && n.authorId && String(n.authorId) === String(authorId)) ||
       (authorName && n.author === authorName) ||
       domIds.has(String(n.id))
     );
-    n.authorSeq = pos >= 0 ? pos + 1 : null;
-    n.authorTotal = ids.length || null;
-    n.authorRefs = ids.filter(id => id !== String(n.id));
   }
 
-  const userIndex = [...byUser.values()].map(b => ({
-    author: b.author,
-    authorId: b.authorId,
-    isAuthor: b.ids.some(id => nodeById.get(id)?.isAuthor === true),
-    commentCount: b.ids.length,
-    commentIds: b.ids
-  })).sort((a, b) => b.commentCount - a.commentCount);
-
+  const authorNodes = nodes.filter(n => n.isAuthor);
   return {
     authorName,
     authorId,
-    authorCommentCount: nodes.filter(n => n.isAuthor).length,
-    authorCommentIds: nodes.filter(n => n.isAuthor).map(n => String(n.id)),
-    userIndex
+    authorCommentCount: authorNodes.length,
+    authorCommentIds: authorNodes.map(n => String(n.id))
   };
 }
 
@@ -624,28 +603,36 @@ function getThreadId() {
 
 /* ── Deal-Metadaten aus DOM ── */
 function extractMetadata() {
-  // Selektoren aus dem GreasyFork-Exporter — Portal-Layout statt Klassen-Guess.
   const descEl = document.querySelector('div[data-t="description"]')
     || document.querySelector('#threadDescriptionItemPortal .userHtml-content')
     || document.querySelector('main [class*="userHtml-content"]');
   const authorEl = document.querySelector('.threadItemCard-author .thread-user, .short-profile-target .thread-user');
+  const priceEl = document.querySelector('[class*="thread-price"]');
+  const nextPriceEl = document.querySelector('span[data-t="nextBestPrice"], span.text--lineThrough, span[class*="text--lineThrough"]');
+  const discountEl = document.querySelector('[data-t="discount"], div.textBadge--green, span.textBadge--green');
+  const voucherEl = document.querySelector('input[data-t="voucherCode"], [data-t="voucherCode"]');
+  const timeEl = document.querySelector('span[data-t="timestamp"], span[title][class*="color--text-TranslucentSecondary"]');
+
   return {
-    threadId: getThreadId(),
-    title:    document.querySelector('h1.thread-title')?.textContent?.trim()
-              || document.title.split(' | ')[0].trim(),
-    price:    document.querySelector('[class*="thread-price"]')?.textContent?.trim() || null,
-    // data-t="merchantLink" matcht auch das Gutschein-Navi → :not(.navMenu-link) (2026-11-27).
-    merchant: document.querySelector('a[data-t="merchantLink"]:not(.navMenu-link), [class*="cept-merchant-name"]')?.textContent?.trim() || null,
-    temperature: document.querySelector('.vote-temp')?.textContent?.trim() || null,
-    author:   authorEl?.textContent?.trim() || null,
-    // Nutzer-ID nur, wenn am Element vorhanden; annotateAuthors() füllt sie sonst nach.
-    authorId: authorEl?.getAttribute('data-user-id')
-              || authorEl?.querySelector?.('[data-user-id]')?.getAttribute('data-user-id')
-              || authorEl?.closest('[data-user-id]')?.getAttribute('data-user-id')
-              || null,
-    description: descEl ? GQL.cleanText(descEl.innerHTML) : null,
-    links:       descEl ? extractLinks(descEl.innerHTML) : [],
-    url:      window.location.href
+    threadId:      getThreadId(),
+    title:         document.querySelector('h1.thread-title')?.textContent?.trim()
+                   || document.title.split(' | ')[0].trim(),
+    price:         priceEl?.textContent?.trim() || null,
+    nextBestPrice: nextPriceEl?.textContent?.trim() || null,
+    discount:      discountEl?.textContent?.trim() || null,
+    merchant:      document.querySelector('a[data-t="merchantLink"]:not(.navMenu-link), [class*="cept-merchant-name"]')?.textContent?.trim() || null,
+    voucherCode:   voucherEl?.value || voucherEl?.textContent?.trim() || null,
+    temperature:   document.querySelector('.vote-temp')?.textContent?.trim() || null,
+    isExpired:     Boolean(document.querySelector('.thread--expired, [data-t="expiredBadge"], [class*="isExpired"]')),
+    createdAt:     timeEl?.getAttribute('title') || document.querySelector('time')?.getAttribute('datetime') || timeEl?.textContent?.trim() || null,
+    author:        authorEl?.textContent?.trim() || null,
+    authorId:      authorEl?.getAttribute('data-user-id')
+                   || authorEl?.querySelector?.('[data-user-id]')?.getAttribute('data-user-id')
+                   || authorEl?.closest('[data-user-id]')?.getAttribute('data-user-id')
+                   || null,
+    description:   descEl ? GQL.cleanText(descEl.innerHTML) : null,
+    links:         descEl ? extractLinks(descEl.innerHTML) : [],
+    url:           window.location.href
   };
 }
 

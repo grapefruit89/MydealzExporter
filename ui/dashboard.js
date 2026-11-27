@@ -19,30 +19,16 @@ let deal = null;
    Serialisierer, keine driftende Kopie von LLM_GUIDE/COLUMNAR_COLUMNS. */
 function exportJson() { return deal.jsonString || ''; }
 
-/* Markdown-Kopf: macht den Export ohne Begleitprompt lesbar (HTML-Kommentar,
-   damit die gerenderte Ansicht sauber bleibt). */
-const MD_GUIDE = `<!--
-🤖 LLM INSTRUCTION & SCHEMA GUIDE:
-Konzept: [anchor:ssot-principle] & [anchor:separation-of-concerns]
-Datensatz: Vollständiger Community- und Kommentar-Export von mydealz.de.
-1. Deal-Kopf & 📊 Deal-Scan: Autoritative Fakten zu Angebot, Temperatur und Aktivität.
-2. 📌 Autor*in: Verbindliche Status-Updates des Angebotserstellers (Gutscheine, Preisfehler, Verfügbarkeit).
-3. Kommentare: Format '[Kommentar #ID] @Autor (Datum) [Score]':
-   - '↳' kennzeichnet Antworten (hierarchische Ebenen 1–4).
-   - 'auch:#ID' verweist auf weitere Kommentare desselben Nutzers.
-Aufgabe: Untersuche Produktstärken/-schwächen, Händler-Seriosität, Fallstricke und erstelle präzise Kaufberatungen.
--->`;
-
 /* Meta-System-Prompt (EN): Rollen- und Ausgabe-Invariante für beide KI-Pfade.
    Wird als `system`-Message (OpenAI-kompatibel) bzw. als Gemini-
    `systemInstruction` gesetzt; die Antwort selbst bleibt deutsch
    (Output-Invariante im Prompt). */
 const SYSTEM_PROMPT = `Act as an elite, objective e-commerce intelligence auditor specializing in deal evaluation and community sentiment analysis.
 You operate strictly under four architectural principles:
-1. [anchor:ssot-principle]: The Deal Header (title, verified price, merchant, voucher codes, creator notes) is the authoritative Ground Truth.
-2. [anchor:separation-of-concerns]: Strictly decouple hard deal parameters (retailer terms, shipping, vouchers) from subjective community feedback and user anecdotes.
-3. [anchor:genchi-genbutsu]: Every community claim or criticism MUST cite specific comment evidence using the comment ID in square brackets (e.g., [#ID] by @author).
-4. [anchor:design-system]: Format strictly in Typora- and Obsidian-compliant standard GitHub-Flavored Markdown (clean H2/H3 hierarchy, markdown tables, callout blockquotes, typographic whitespace, zero raw HTML).
+1. [SSOT]: The Deal Header (title, verified price, merchant, voucher codes, creator notes) is the authoritative Ground Truth.
+2. [Separation of Concerns]: Strictly decouple hard deal parameters (retailer terms, shipping, vouchers) from subjective community feedback and user anecdotes.
+3. [Genchi-Genbutsu]: Every community claim or criticism MUST cite specific comment evidence using the comment ID in square brackets (e.g., [#ID] by @author).
+4. [Design System]: Format strictly in Typora- and Obsidian-compliant standard GitHub-Flavored Markdown (clean H2/H3 hierarchy, markdown tables, callout blockquotes, typographic whitespace, zero raw HTML).
 
 OUTPUT FORMAT INVARIANT: Always generate the final user-facing response in professional, well-structured, clear German Markdown.`;
 
@@ -392,78 +378,126 @@ function setupExport() {
   document.getElementById('ai-copy-btn').addEventListener('click', async () => { await navigator.clipboard.writeText(document.getElementById('ai-output').textContent); flash('ai-copy-btn', '✅'); });
 }
 
-/* Markdown: Link-Labels und Status-Updates dürfen die Struktur nicht sprengen
-   (eckige Klammern beenden einen Link, Zeilenumbrüche eine Listenzeile). */
-function mdInline(text) {
-  return String(text ?? '').replace(/[\[\]]/g, '').replace(/\s*\n+\s*/g, ' ').trim();
+/* Markdown-Zellen- & Textbereinigung: Maskiert Pipes und Zeilenumbrüche,
+   damit Markdown-Tabellen und Frontmatter nicht zerbrechen. */
+function mdCell(text) {
+  return String(text ?? '').replace(/\|/g, '\\|').replace(/\s*\n+\s*/g, ' ').trim();
 }
 
-/* Vollständiger Markdown-Export. Reihenfolge = Lesereihenfolge:
-   Kopf → Beschreibung → Deal-Scan → Links → Autor*in-Updates → Thread-Baum. */
+function mdInline(text) {
+  return String(text ?? '').replace(/[\[\]]/g, '').replace(/\|/g, '\\|').replace(/\s*\n+\s*/g, ' ').trim();
+}
+
+/* Vollständiger CommonMark-Export nach 4-teiliger Gliederung:
+   0. YAML-Frontmatter (llm_guide, schema, sections)
+   1. Deal-Kopf (H1 + 2-Spalten-Tabelle)
+   2. Deal-Beschreibung (H2) + Deal-Scan (H2)
+   3. Kommentare (H2) mit Index-Tabelle + H3/H4-Hierarchie */
 function buildMarkdown() {
   const { meta, comments, stats } = deal;
   const s = stats || {};
   const r = s.reactions || {};
+
+  const summaryText = `${meta.title || 'Deal'} für ${meta.price || 'k. A.'} bei ${meta.merchant || 'k. A.'} (${meta.temperature || 'k. A.'}, ${s.totalTopLevel || 0} Top-Level, ${s.authorCommentCount || 0} OP-Beiträge).`;
+  const summaryJson = JSON.stringify(summaryText.slice(0, 200));
+
   const lines = [
+    '---',
+    'status: active',
+    'type: reference',
+    'tags: [mydealz, deal-export]',
+    'sections: [deal-beschreibung, deal-scan, kommentare]',
+    `summary: ${summaryJson}`,
+    'llm_guide: |',
+    '  Kontext: Vollstaendiger Deal- und Kommentar-Export von mydealz.de.',
+    '  Schema: [OP] = Dealersteller | Reaktionen getrennt in like, helpful, funny | ↳ #ID = Antwort auf #ID.',
+    '  Auftrag: Pruefe Preis-Leistung vs. UVP, Haendler-Seriositaet und gewichte helpful hoeher als funny.',
+    '---',
+    '',
+    `# ${mdCell(meta.title || 'Deal')}`,
+    '',
+    '| Feld | Wert |',
+    '| :--- | :--- |',
+    `| **Preis / Rabatt** | **${mdCell(meta.price || 'k. A.')}** (UVP: ${mdCell(meta.nextBestPrice || 'k. A.')} \\| **${mdCell(meta.discount || 'k. A.')}**) |`,
+    `| **Händler & Code** | ${mdCell(meta.merchant || 'k. A.')} \\| Code: ${mdCell(meta.voucherCode || 'keiner')} \\| Versand: ${mdCell(meta.shipping || 'k. A.')} |`,
+    `| **Status & Temp.** | ${meta.isExpired ? '❌ Abgelaufen' : '✅ Aktiv'} \\| **${mdCell(meta.temperature || 'k. A.')}** \\| Erstellt: ${mdCell(meta.createdAt || 'k. A.')} |`,
+    `| **Dealersteller** | @${mdCell(meta.author || 'unbekannt')} (${s.authorCommentCount || 0} Beiträge) |`,
+    `| **URL** | ${meta.url || ''} |`,
+    '',
     ...(s.filteredNonsense || s.filterNote
       ? ['> ℹ️ **Ratenlimit-Schutz aktiv:** Inhaltslose Einzeiler (< 50 Zeichen ohne Reaktionen) wurden automatisch gefiltert.', '']
       : []),
-    MD_GUIDE,
-    `# ${meta.title || 'Deal'}`,
-    `**URL:** ${meta.url}`,
-    `**Kommentare:** ${s.totalTopLevel ?? 0} Top-Level + ${s.totalRepliesVisible ?? 0} Replies`,
-    meta.price ? `**Preis:** ${meta.price}` : '',
-    meta.merchant ? `**Händler:** ${meta.merchant}` : '',
-    meta.author ? `**Dealersteller:** @${meta.author} (${s.authorCommentCount || 0} Beiträge)` : '',
-    s.totalHiddenReplies > 0 ? `⚠ ${s.totalHiddenReplies} Replies verborgen` : '',
-    deal.incomplete ? `> ⚠️ **EXPORT UNVOLLSTÄNDIG** — Rate-Limit-Antwort. Gesichert: ${s.totalTopLevel ?? 0} Top-Level-Kommentare, ${s.totalRepliesVisible ?? 0} Replies.` : '',
+    ...(deal.incomplete
+      ? [`> ⚠️ **EXPORT UNVOLLSTÄNDIG** — Rate-Limit-Antwort. Gesichert: ${s.totalTopLevel ?? 0} Top-Level, ${s.totalRepliesVisible ?? 0} Replies.`, '']
+      : []),
+    '## Deal-Beschreibung',
     '',
-    '---',
+    meta.description ? meta.description.trim() : '*(Keine Beschreibung vorhanden)*',
     ''
   ];
-  if (meta.description) { lines.push(meta.description, '', '---', ''); }
-
-  // Deal-Scan als eigener Block: der Leser sieht die Verteilung vor dem Text.
-  lines.push('## 📊 Deal-Scan', '');
-  lines.push(`- Top-Level: ${s.totalTopLevel ?? 0}`);
-  lines.push(`- Replies: ${s.totalRepliesVisible ?? 0}`);
-  lines.push(`- Max-Level: ${s.maxLevel || 0}`);
-  lines.push(`- Autor*in-Beiträge: ${s.authorCommentCount || 0}`);
-  lines.push(`- Reaktionen: 👍 ${r.like || 0} · 💡 ${r.helpful || 0} · 😄 ${r.funny || 0}`);
-  lines.push('', '---', '');
 
   const links = collectLinks();
   if (links.length) {
-    lines.push(`## 🔗 Links (${links.length})`, '');
-    links.forEach(l => lines.push(`- @${l.author || '?'}: [${mdInline(l.text || l.url).slice(0, 100)}](${l.url})`));
-    lines.push('', '---', '');
+    lines.push(`### 🔗 Links (${links.length})`, '');
+    links.forEach(l => lines.push(`- @${mdCell(l.author || '?')}: [${mdInline(l.text || l.url).slice(0, 100)}](${l.url})`));
+    lines.push('');
   }
 
-  // Eigene Sektion: alle Beiträge des Dealerstellers gebündelt (auch Replies),
-  // chronologisch — verbindliche Statusmeldungen zu Preis/Verfügbarkeit.
+  // Deal-Scan als autoritativer Zahlen-Block
+  lines.push('## Deal-Scan', '');
+  lines.push(`- **Diskussion:** ${s.totalTopLevel ?? 0} Top-Level · ${s.totalRepliesVisible ?? 0} Replies · Max-Tiefe: ${s.maxLevel || 0}`);
+  lines.push(`- **Akteure:** ${s.authorCommentCount || 0} Beiträge vom Dealersteller [OP]`);
+  lines.push(`- **Reaktionen gesamt:** 👍 ${r.like || 0} · 💡 ${r.helpful || 0} · 😄 ${r.funny || 0}`);
+  if (s.totalHiddenReplies > 0) lines.push(`- ⚠ ${s.totalHiddenReplies} Replies verborgen`);
+  lines.push('');
+
   const updates = authorUpdates();
   if (updates.length) {
-    lines.push(`## 📌 Updates vom Dealersteller (${updates.length})`, '');
+    lines.push(`### 📌 Updates vom Dealersteller (${updates.length})`, '');
     updates.forEach(c => {
-      const ctx = c.level > 0 ? ` · Antwort auf [Kommentar #${c.parentId || '?'}]` : '';
-      lines.push(`- **[Kommentar #${c.id}]** (${c.date || '?'}${ctx}): ${mdInline(c.text || '(geloescht)')}`);
+      const ctx = c.level > 0 ? ` · Antwort auf [#${c.parentId || '?'}]` : '';
+      lines.push(`- **[#${c.id}]** (${c.date || '?'}${ctx}): ${mdInline(c.text || '(geloescht)')}`);
     });
-    lines.push('', '---', '');
+    lines.push('');
   }
 
-  // Thread-Baum: Einrückung = Ebene, [Kommentar #ID] = stabile Referenz für LLMs.
-  // Querverweise (authorRefs) machen Dialoge desselben Nutzers nachverfolgbar.
-  const walk = (c, d) => {
-    const p = '  '.repeat(d);
-    const sc = score(c);
-    const rel = (c.level > 0 || d > 0) ? `↳ Antwort auf [Kommentar #${c.parentId || '?'}] · ` : '';
-    const refs = (c.authorRefs || []).length ? ` · auch von @${c.author}: ${c.authorRefs.map(id => `[Kommentar #${id}]`).join(' ')}` : '';
-    lines.push(`${p}**[Kommentar #${c.id}]** **@${c.author}**${c.isAuthor ? ' 👑 Autor*in' : ''} (${c.date}) [${sc}]${sc >= 3 ? ' 🔥' : ''}: ${rel}${c.text || '(geloescht)'}${refs}`);
-    if (c._hiddenReplies) lines.push(`${p}*(+${c._hiddenReplies} verborgen)*`);
+  // Kommentare: Zuerst Schnell-Index der Top-Level-Stränge, danach H3/H4-Hierarchie
+  lines.push('## Kommentare', '');
+  const topLevels = (comments || []).filter(c => !c.level || c.level === 0);
+
+  if (topLevels.length) {
+    lines.push('| ID | Autor | Reaktionen | Replies | Einstieg / Thema |');
+    lines.push('| :--- | :--- | :--- | :--- | :--- |');
+    for (const c of topLevels) {
+      const rx = c.reactions || {};
+      const rxStr = `👍 ${rx.like || 0} · 💡 ${rx.helpful || 0} · 😄 ${rx.funny || 0}`;
+      const preview = mdCell((c.text || '').slice(0, 60));
+      lines.push(`| \`#${c.id}\` | @${mdCell(c.author || '?')}${c.isAuthor ? ' **[OP]**' : ''} | ${rxStr} | ${c.replyCount || 0} | ${preview} |`);
+    }
     lines.push('');
-    c.replies?.forEach(r2 => walk(r2, d + 1));
+  }
+
+  // Hierarchischer Kommentarbaum: H3 für Top-Level, H4 für alle Replies (Level 1–4)
+  const walk = (c, d) => {
+    const rx = c.reactions || {};
+    const rxStr = `👍 ${rx.like || 0} 💡 ${rx.helpful || 0} 😄 ${rx.funny || 0}`;
+    const opTag = c.isAuthor ? ' [OP]' : '';
+    const editedTag = c.wasEdited ? ' · [edited]' : '';
+
+    if (d === 0) {
+      lines.push(`### #${c.id} @${mdCell(c.author || '?')}${opTag} · ${c.date || '?'} · ${rxStr}${editedTag}`);
+    } else {
+      lines.push(`#### #${c.id} @${mdCell(c.author || '?')}${opTag} (↳ #${c.parentId || '?'}) · ${c.date || '?'} · ${rxStr}${editedTag}`);
+    }
+    lines.push('');
+    lines.push(c.text ? c.text.trim() : '*(geloescht)*');
+    if (c._hiddenReplies) lines.push(`\n*(+${c._hiddenReplies} verborgen)*`);
+    lines.push('');
+
+    (c.replies || []).forEach(r2 => walk(r2, d + 1));
   };
-  comments.forEach(c => walk(c, 0));
+
+  (comments || []).forEach(c => walk(c, 0));
   return lines.filter(Boolean).join('\n');
 }
 
@@ -510,10 +544,7 @@ function commentLine(c, depth) {
   const r = c.reactions || {};
   const rx = [r.like ? `like:${r.like}` : '', r.helpful ? `helpful:${r.helpful}` : '', r.funny ? `funny:${r.funny}` : ''].filter(Boolean).join(' ');
   const meta = [rx, c.replyCount > 0 ? `${c.replyCount}replies` : ''].filter(Boolean).join(' ');
-  // [#id] + Autor*in-Marker + Querverweise: ein LLM kann Dialoge desselben
-  // Nutzers ohne eigenen Index nachverfolgen (Cross-Linking).
-  const refs = (c.authorRefs || []).length ? ` auch:#${c.authorRefs.join(' #')}` : '';
-  return `${prefix}[#${c.id}]${c.isAuthor ? ' 📌Autor*in' : ''} @${c.author}${meta ? ` [${meta}]` : ''}${refs}: ${(c.text || '')}`;
+  return `${prefix}[#${c.id}]${c.isAuthor ? ' 📌Autor*in' : ''} @${c.author}${meta ? ` [${meta}]` : ''}: ${(c.text || '')}`;
 }
 
 function relevantComments() {
