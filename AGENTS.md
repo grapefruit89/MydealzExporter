@@ -15,7 +15,7 @@ summary: "Verhaltensvertrag: MV3-Vanilla-Invarianten, Zero-Polyfill-Chromium-Bas
 1. **Vanilla MV3, Zero-Build:** Nur `manifest.json` + handgeschriebenes HTML/CSS/JS.
    **Verboten:** Vite, Plasmo, Webpack, Babel, TypeScript, React/Vue/Svelte, `npm`-Pakete im
    Extension-Bundle, jedes neue Scaffold. Bestehender Code wird nicht „modernisiert".
-   **Layout:** drei Ordner — `content/` (Scraper), `ui/` (Cockpit, Popup, Icons), `tools/` (Gates); `manifest.json` + `service-worker.js` in der Wurzel.
+   **Layout:** vier Ordner — `content/` (Scraper), `ui/` (Cockpit, Popup, Icons), `tools/` (Gates), `docs/` (Doku); `manifest.json` + `service-worker.js` in der Wurzel.
 2. **Baseline Chromium 150+, Zero-Polyfill:** Native APIs genügen (`structuredClone`,
    `Promise.withResolvers`, `chrome.storage.session`, `Array.prototype.at`, `Set`-Methoden).
    Kein Transpiler, kein Polyfill, kein Legacy-Fallback.
@@ -33,7 +33,7 @@ summary: "Verhaltensvertrag: MV3-Vanilla-Invarianten, Zero-Polyfill-Chromium-Bas
    Styling-Klassen sind kein Vertrag und taugen nicht als Selektor.
 7. **Keine neuen Hosts oder Permissions** ohne ausdrückliches Go; `manifest.json` ist die Liste.
 8. **Zwei Use-Cases, eingefroren:** Listing-Export (UC1) und Deal-/Kommentar-Export (UC2).
-   Neue Produktflächen nur nach Auftrag, siehe `review_grok.md` §11.
+   Neue Produktflächen nur nach Auftrag, siehe `docs/review_grok.md` §11.
 9. **Tiefe Module, 15–40 KiB [anchor:deep-modules]:** Jede Content-/UI-JS-Datei liegt zwischen
    15 und 40 KiB (≈300–800 Zeilen). Kleinere Shallow Modules kosten Tool-Call-Zersplitterung,
    größere den Kontext-Hop. Zero-Build erlaubt keine Imports — gemeinsame Helfer stehen als
@@ -65,6 +65,6 @@ Kein `npm run dev`, kein Testframework — es gibt keins und es wird keins einge
 ## 4. Definition of Done
 
 1. `node --check` grün, `manifest.json` valides JSON, Modul-Gate grün.
-2. Bei Verhaltensänderung: `version` in `manifest.json` erhöhen (aktuell `17.5`).
+2. Bei Verhaltensänderung: `version` in `manifest.json` erhöhen (aktuell `17.10`).
 3. Nur die von der Aufgabe genannten Dateien geändert; Doku-Aufträge fassen **keinen** Quellcode an.
-4. Doku-Fakten (GraphQL-Eigenheiten) gehören nach `data_insights.md`, nicht in den Chat.
+4. Doku-Fakten (GraphQL-Eigenheiten) gehören nach `docs/data_insights.md`, nicht in den Chat.

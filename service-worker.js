@@ -1,4 +1,6 @@
 // MyDealz AI Exporter – Background Service Worker (MV3)
+// [anchor:stateless-service] Der Worker hält keinen Zustand: Payload lebt in
+// chrome.storage.session, jede Nachricht ist ein eigener, wiederholbarer Lauf.
 'use strict';
 
 // Zustand in chrome.storage.session (überlebt SW-Suspension nach 30s)

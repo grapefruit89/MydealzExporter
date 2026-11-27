@@ -33,15 +33,26 @@ Datensatz: Vollständiger Community- und Kommentar-Export von mydealz.de.
 Aufgabe: Untersuche Produktstärken/-schwächen, Händler-Seriosität, Fallstricke und erstelle präzise Kaufberatungen.
 -->`;
 
+/* Meta-System-Prompt (EN): Rollen- und Ausgabe-Invariante für beide KI-Pfade.
+   Wird als On-Device-Session-Prompt UND als Gemini-`systemInstruction` gesetzt;
+   die Antwort selbst bleibt deutsch (Output-Invariante im Prompt). */
+const SYSTEM_PROMPT = `Act as an elite, objective e-commerce intelligence auditor specializing in deal evaluation and community sentiment analysis.
+You operate strictly under three architectural principles:
+1. [anchor:ssot-principle]: The Deal Header (title, verified price, merchant, voucher codes, creator notes) is the authoritative Ground Truth.
+2. [anchor:separation-of-concerns]: Strictly decouple hard deal parameters (retailer terms, shipping, vouchers) from subjective community feedback and user anecdotes.
+3. [anchor:genchi-genbutsu]: Every community claim or criticism MUST cite specific comment evidence using the comment ID in square brackets (e.g., [#ID] by @author).
+
+OUTPUT FORMAT INVARIANT: Always generate the final user-facing response in professional, well-structured, clear German Markdown.`;
+
 /* Sechs Standardfragen. Kurz gehalten, damit sie in die 3x2-Kacheln passen;
    die Ausführlichkeit entsteht im Kontext (buildAIContext), nicht im Prompt. */
 const PROMPTS = {
-  summary: 'Fasse den Deal und die Kommentare zusammen (5-7 Saetze). Was ist das Angebot, was sagen die Nutzer?',
-  sentiment: 'Stimmungsanalyse der Kommentare: positiv/negativ/gemischt. 3 konkrete Beispiele mit Kurzinhalten.',
-  questions: 'Welche Fragen, Probleme oder Unsicherheiten wurden erwaehnt? Als Stichpunkte.',
-  highlights: 'Die 5 wichtigsten Kommentare (Reaktionen/Replies/Inhalt). Erklaere kurz warum jeder wichtig ist.',
-  problems: 'Berichte ueber Probleme, Fehler, Warnungen? Alles kritische zusammenfassen.',
-  verdict: 'Lohnt sich der Deal? Pro/Contra-Liste und Fazit in 2 Saetzen.'
+  summary: 'Erstelle einen strukturierten 360°-Kompaktüberblick: Deal-Eckdaten (Preis, UVP, Ersparnis, Händler, Gutschein), wichtige Nachträge des Erstellers und den Community-Konsens in 3 präzisen Bulletpoints.',
+  sentiment: 'Führe eine quantitative & qualitative Stimmungsanalyse durch: Stimmungsbarometer (geschätzte Verteilung % Positiv / Neutral / Negativ), Hauptgründe für Lob (mit Beleg [#ID] und @Autor), Hauptgründe für Kritik (mit Beleg [#ID] und @Autor) und Verlaufstrend.',
+  questions: 'Identifiziere alle ungeklärten Fragen und Praxistipps: Häufige Verwirrung (Gutscheine, Bedingungen, Cashback), Größen-, Passform- & Kompatibilitätstipps der Nutzer (mit [#ID]) und gelöste Hürden.',
+  highlights: 'Filtere die 5 wertvollsten Kommentare mit dem höchsten Signalwert heraus (nummerierte Liste 1-5 mit @Autor, [#ID], Signalwert-Kategorie wie Vergleichspreis/Zusatztrick/Langzeittest und Kern-Takeaway).',
+  problems: 'Schonungslose Risikoanalyse aller Warnungen und Haken: Bestell- & Lieferrisiken (Storno, Händlerservice), Produktmängel & Retourengründe aus Erfahrungsberichten (mit [#ID]) und versteckte Kosten.',
+  verdict: 'Erstelle eine objektive Kaufberatung: Pro & Contra Matrix der stärksten Argumente, Zielgruppen-Filter (Kaufen wenn... vs. Finger weg wenn...) und ein verbindliches Fazit in maximal 2 Sätzen.'
 };
 
 /* Score: noteworthy*4 + helpful*3 + replies*3 + like*2 + funny.
@@ -460,7 +471,7 @@ async function callAI(prompt, ctx) {
   if (typeof ai !== 'undefined') {
     const model = ai.languageModel || ai.assistant;
     if (model?.create) {
-      const session = await model.create({ systemPrompt: 'Du analysierst mydealz.de Deals und Kommentare. Antworte auf Deutsch, praezise.' });
+      const session = await model.create({ systemPrompt: SYSTEM_PROMPT });
       return await session.prompt(`${prompt}\n\n${ctx}`);
     }
   }
@@ -478,7 +489,7 @@ async function callAI(prompt, ctx) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        systemInstruction: { parts: [{ text: 'Du analysierst mydealz.de Deals. Antworte auf Deutsch.' }] },
+        systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
         contents: [{ parts: [{ text: `${prompt}\n\n${ctx}` }] }]
       })
     });

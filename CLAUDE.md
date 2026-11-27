@@ -9,6 +9,8 @@ summary: "Ein-Schritt-Zeiger für Claude / Claude Code auf AGENTS.md und map.md;
 
 **MyDealzExporter** — Chrome-Extension (Manifest V3, Vanilla JS, kein Build) für mydealz.de.
 
+**Doku:** `docs/` — `data_insights.md`, `methodik.md`, `review_grok.md`, `AI-AGENTS-CLI.md`.
+
 ## Verbindlicher Leitfaden (1-Schritt O(1)-Routing)
 
 1. Vor jeder Aktion zuerst [`AGENTS.md`](AGENTS.md) (Invarianten, Gates, Testbefehle) und

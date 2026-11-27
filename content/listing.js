@@ -17,6 +17,10 @@
      temperature, commentCount, isExpired, publishedAt, createdAt,
      user { username userId }, merchant { merchantId merchantName },
      mainImage { uid path }
+
+   [anchor:fail-closed] Kein Download bei fehlerhaftem Abruf: Fehler brechen
+   sichtbar ab, fehlende Threads werden als `error: 'nicht gefunden'` markiert
+   statt stillschweigend weggelassen — Teilexporte sind als solche erkennbar.
    ========================================================= */
 
 // #region shared-bootstrap

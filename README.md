@@ -15,26 +15,26 @@ Eine Chrome-Extension (Manifest V3, Vanilla JS) für [mydealz.de](https://www.my
 
 ## Die zwei Use-Cases
 
-Die Extension ist bewusst auf genau zwei Produkte eingefroren (siehe `review_grok.md` §11):
+Die Extension ist bewusst auf genau zwei Produkte eingefroren (siehe `docs/review_grok.md` §11):
 
 ```mermaid
 flowchart LR
     A[mydealz-Seite] --> B{Welcher Seitentyp?}
-    B -->|Deal-Übersicht<br/>/gruppe/*, /search, /hot, …| C[UC1: Listing-Export]
+    B -->|Themen-Feed<br/>/gruppe/*, /search*| C[UC1: Listing-Export]
     B -->|Deal / Diskussion<br/>/deals/*, /diskussion/*| D[UC2: Kommentar-Export]
     C --> E[JSON oder Markdown]
     D --> F[In-Page-Cockpit<br/>&lt;dialog&gt;-Overlay]
     F --> E2[JSON · MD · Kopieren]
     F --> G[On-Device KI<br/>LanguageModel / Prompt]
-    F --> H[Cloud-Gemini<br/>nur als Fallback]
+    F --> H[Cloud-Gemini / Groq<br/>als Fallback]
 ```
 
 ### Use-Case 1 — Deal-Übersichten
 
-Auf jeder Übersichtsseite (`/gruppe/iphone-17`, `/search?q=…`, `/hot`, `/neu`, …) erscheint ein Widget unten rechts:
+Auf fokussierten Übersichtsseiten (`/gruppe/*`, `/search*` — inhomogene Feeds wie die Startseite bleiben bewusst ohne Widget) erscheint eine grüne Kapsel-Leiste unten rechts:
 
 - **JSON** — alle sichtbaren Deals mit vollem Feldset: Titel, Beschreibung (Plaintext + HTML), Preise inkl. `displayPrice`, durchgestrichener UVP und berechneter Rabatt-%, Versandkosten (`shipping`, `shippingFree`), Temperatur, Kommentarzahl, Händler, Autor, Bearbeitungs-Zeitstempel (`updatedAt`), **Kategorie** (`mainGroup`/`groupsPath`), Ablaufstatus, Bild-URL, `shareLink` und alle Links der Beschreibung (`links[]`)
-- **MD** — dieselben Daten als kompakte Markdown-Deal-Karten mit echten Überschriften, Fett-Durchstreichungen und Markdown-Beschreibungen
+- **MD** — dieselben Daten als schablonenhafte, bilderfreie Markdown-Deal-Karten mit einheitlicher Feldreihenfolge
 - **+2 Seiten** — lädt zusätzlich die zwei Folgeseiten (via `?page=N&ajax=true&layout=horizontal`, geparst aus den `data-vue3`-Payloads), dedupliziert gegen die sichtbare Seite. Bewusst knapp gedeckelt: max. 2 Extraseiten, 700 ms Pause — kein Ban-Risiko
 
 ### Use-Case 2 — Deal-/Diskussionsseiten
@@ -217,8 +217,9 @@ MydealzExporter/
 | `tools/EAST-WEST-MAP.md` | Schema-Matrix DOM vs. GraphQL inklusive Feldzuordnung und Drift-Notizen |
 | `service-worker.js` | Einziger Service Worker: nimmt den Export-Payload entgegen und legt ihn in `chrome.storage.session` ab |
 | `manifest.json` | Permissions, Content-Script-Matches, Service Worker, Popup, Icons |
+| `docs/` | Dokumentations-Verzeichnis (`data_insights.md`, `review_grok.md`, `methodik.md`, `AI-AGENTS-CLI.md`) |
 
-Die Dokumentation (`README.md`, `AGENTS.md`, `map.md`, `data_insights.md`, `review_grok.md`, `methodik.md`) bleibt in der Wurzel. Die früheren Ordner `background/`, `popup/` und `icons/` existieren nicht mehr — ihre Inhalte liegen jetzt in `ui/` bzw. in der Wurzel.
+Das Wurzelverzeichnis enthält strikt die Einstiege (`README.md`, `AGENTS.md`, `map.md`, `CLAUDE.md`, `GEMINI.md`, `manifest.json`, `service-worker.js`). Vertiefende Doku wohnt in `docs/`. Die vier Kern-Verzeichnisse lauten `content/`, `ui/`, `tools/` und `docs/`.
 
 ---
 
@@ -298,10 +299,10 @@ Konsequenz: **nutzen auf eigenes Risiko** (persönliche Nutzung, sinnvolles Temp
 
 ## Projekt-Dokumentation
 
-- `data_insights.md` — GraphQL-Eigenheiten, Datenquellen-Erkenntnisse, alle übernommenen Techniken aus Community-Quellen
-- `review_grok.md` — Zielarchitektur, Use-Case-Grenzen, Review-Gegenprüfung
+- `docs/data_insights.md` — GraphQL-Eigenheiten, Datenquellen-Erkenntnisse, alle übernommenen Techniken aus Community-Quellen
+- `docs/review_grok.md` — Zielarchitektur, Use-Case-Grenzen, Review-Gegenprüfung
 - `AGENTS.md` · `map.md` — Verhaltensvertrag und Task-to-File-Navigation für Agenten
-- `AI-AGENTS-CLI.md` — Entwickler-Workflow (Extension laden, DevTools-MCP, Systemprompt)
+- `docs/AI-AGENTS-CLI.md` — Entwickler-Workflow (Extension laden, DevTools-MCP, Systemprompt)
 - `tools/health-check.mjs` — Health-Check über alle vier Säulen (`--offline` für die statischen Gates)
 - `tools/repo-map-check.mjs` — Budget- und Modul-Gate (15–40 KiB, `shared-bootstrap`)
 
