@@ -106,18 +106,120 @@ document.addEventListener('DOMContentLoaded', async () => {
 });
 
 /* ── Popup: Gemini-API-Key in chrome.storage.local ──
-   Key nie loggen, nie exportieren, nur hier und in callAI() lesen. */
+   Key nie loggen, nie exportieren, nur hier und in callAI() lesen.
+   Smart-Input: Einfügen/Tippen validiert live gegen die Models-API
+   (HTTP 200 = valide), speichert automatisch und zeigt danach nur die
+   Maske. Leeres Feld entfernt den Key wieder. */
 function initPopupSettings() {
   const keyInput = document.getElementById('apiKey');
-  const savedMsg = document.getElementById('saved');
-  chrome.storage.local.get(['geminiApiKey'], r => { if (r.geminiApiKey) keyInput.value = r.geminiApiKey; });
-  document.getElementById('save').onclick = () => {
-    const key = keyInput.value.trim();
-    chrome.storage.local.set({ geminiApiKey: key }, () => {
-      savedMsg.style.display = 'block';
-      setTimeout(() => savedMsg.style.display = 'none', 2000);
-    });
+  const statusEl = document.getElementById('key-status');
+  const editBtn = document.getElementById('key-edit');
+  const clearBtn = document.getElementById('key-clear');
+  if (!keyInput) return;
+
+  const MASK = '••••••••••••••••••••••••••••••••';
+  const maskKey = k => MASK + String(k).slice(-6);
+  let currentKey = '';
+  let seq = 0;        // entwertet veraltete Validierungen (Race-Schutz)
+  let timer = null;   // Debounce fürs Tippen
+
+  const setStatus = (text, cls) => {
+    if (!statusEl) return;
+    statusEl.textContent = text;
+    statusEl.className = 'key-status' + (cls ? ' ' + cls : '');
   };
+
+  const showMasked = () => {
+    keyInput.readOnly = true;
+    keyInput.type = 'text';
+    keyInput.value = maskKey(currentKey);
+    keyInput.classList.add('masked');
+    keyInput.title = 'Klicken zum Bearbeiten';
+    if (editBtn) editBtn.hidden = false;
+    if (clearBtn) clearBtn.hidden = false;
+  };
+
+  const enterEdit = () => {
+    keyInput.readOnly = false;
+    keyInput.type = 'password';
+    keyInput.value = currentKey;
+    keyInput.classList.remove('masked');
+    keyInput.title = '';
+    if (editBtn) editBtn.hidden = true;
+    if (clearBtn) clearBtn.hidden = false;
+    keyInput.focus();
+    try { keyInput.select(); } catch (_) { /* egal */ }
+  };
+
+  const persist = key => new Promise(resolve => {
+    if (key) chrome.storage.local.set({ geminiApiKey: key }, resolve);
+    else chrome.storage.local.remove(['geminiApiKey'], resolve);
+  });
+
+  const validate = async key => {
+    const mine = ++seq;
+    setStatus('⏳ Prüfe Key…', 'busy');
+    try {
+      const res = await fetch('https://generativelanguage.googleapis.com/v1beta/models?key=' + encodeURIComponent(key));
+      if (mine !== seq) return;
+      if (!res.ok) { setStatus(`❌ Ungültig (HTTP ${res.status})`, 'err'); return; }
+      currentKey = key;
+      await persist(key);
+      if (mine !== seq) return;
+      setStatus('✅ Valide', 'ok');
+      showMasked();
+    } catch (_) {
+      if (mine !== seq) return;
+      setStatus('❌ Ungültig (Netzwerkfehler)', 'err');
+    }
+  };
+
+  const clearKey = () => {
+    seq++;
+    clearTimeout(timer);
+    currentKey = '';
+    persist('');
+    keyInput.readOnly = false;
+    keyInput.type = 'password';
+    keyInput.value = '';
+    keyInput.classList.remove('masked');
+    keyInput.title = '';
+    if (editBtn) editBtn.hidden = true;
+    if (clearBtn) clearBtn.hidden = true;
+    setStatus('Kein Key gespeichert.', '');
+    keyInput.focus();
+  };
+
+  const handleInput = immediate => {
+    const key = keyInput.value.trim();
+    clearTimeout(timer);
+    if (!key) { clearKey(); return; }
+    if (/^AIza/.test(key) && key.length >= 35) {
+      // Gültiges Gemini-Format: kurz sammeln (Tippen) bzw. sofort prüfen (Paste/Enter).
+      if (immediate) { validate(key); return; }
+      setStatus('⏳ Prüfe Key…', 'busy');
+      timer = setTimeout(() => validate(key), 450);
+    } else {
+      seq++;   // laufende Prüfung für den alten Wert verwerfen
+      setStatus('⚠️ Format unbekannt – Gemini-Keys beginnen mit „AIza“ (≥ 35 Zeichen).', '');
+    }
+  };
+
+  keyInput.addEventListener('input', () => handleInput(false));
+  keyInput.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); handleInput(true); }
+  });
+  keyInput.addEventListener('focus', () => { if (keyInput.readOnly) enterEdit(); });
+  if (editBtn) editBtn.addEventListener('click', enterEdit);
+  if (clearBtn) clearBtn.addEventListener('click', clearKey);
+
+  chrome.storage.local.get(['geminiApiKey'], r => {
+    const saved = String(r?.geminiApiKey || '').trim();
+    if (!saved) { setStatus('Kein Key gespeichert.', ''); return; }
+    currentKey = saved;
+    setStatus('✅ Aktiv', 'ok');
+    showMasked();
+  });
 }
 
 /* ── Kopfzeile: Titel, Preis, Händler, Temperatur, Deal-Link ── */

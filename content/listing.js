@@ -7,7 +7,8 @@
    1. Thread-IDs aus DOM-Artikeln lesen
    2. Optional +2 weitere Seiten via AJAX-Endpoint
       (?page=N&ajax=true&layout=horizontal → data-vue3-Payloads)
-   3. Threads in 30er-Batches per GraphQL-Aliase holen (Chunking)
+   3. Threads in 10er-Batches per GraphQL-Aliase holen (Chunking;
+     30 Aliase sprengen Mydealz' Komplexitätslimit von 500 — 10 bleiben darunter)
    4. Wahlweise als JSON oder kompaktes Markdown exportieren
 
    GQL-Felder (alle live verifiziert):
@@ -328,9 +329,9 @@ function buildImageUrl(mainImage) {
   return `https://static.mydealz.de/${mainImage.path}/${uidClean}/re/1024x1024/qt/60/${uidClean}.jpg`;
 }
 
-/* ── GQL Batch-Anfrage mit Chunking (30er-Batches per Alias) ── */
+/* ── GQL Batch-Anfrage mit Chunking (10er-Batches per Alias) ── */
 async function fetchThreadsBatch(ids, onProgress) {
-  const CHUNK_SIZE = 30;
+  const CHUNK_SIZE = 10;
   const allDeals = [];
   const token = getCsrf();
 
