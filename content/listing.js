@@ -1,7 +1,7 @@
 'use strict';
 /* =========================================================
    listing.js  –  Deal-Karten-Exporter (Use Case 1)
-   Listing-Seiten: /, /search*, /gruppe/*, /deals*, /neu*, etc.
+   Listing-Seiten: /search*, /gruppe/*, /group/* (siehe isListingPage)
 
    Für jede Seite:
    1. Thread-IDs aus DOM-Artikeln lesen
@@ -426,7 +426,10 @@ async function fetchThreadsBatch(ids, onProgress) {
         keywords:       d.keywordNames || null,
 
         // Bild
-        imageUrl:       buildImageUrl(d.mainImage)
+        imageUrl:       buildImageUrl(d.mainImage),
+
+        // Listing-Export enthält bewusst KEINE Kommentare (nur den Zähler oben)
+        comments:       []
       });
     }
 
@@ -591,6 +594,7 @@ function buildListMarkdown(exportObj) {
     lines.push(`### ${idx + 1}. [${d.title || `Deal #${d.id}`}](${d.url})`);
     if (priceInfo) lines.push(`- **Preis:** ${priceInfo}`);
     if (metaParts.length) lines.push(`- **Details:** ${metaParts.join(' · ')}`);
+    lines.push(`- **Kommentare:** 0 (Listing-Export ohne Kommentare)`);
     if (d.descriptionHtml || d.description) {
       lines.push('', htmlToMarkdown(d.descriptionHtml) || d.description);
     }
@@ -613,117 +617,109 @@ function downloadFile(content, filename, type) {
   URL.revokeObjectURL(url);
 }
 
-/* ── Floating-Widget (JSON + Markdown) via nativem Popover ── */
+/* ── Floating-Widget (JSON + Markdown) via nativem Popover ──
+   Optik, Typografie und Popover-Mechanik 1:1 aus content/content.js:
+   Capsule-Buttons, Averta CY, 700er Gewicht, Top-Layer via Popover.
+   `inset` + `top/left/bottom/right` sind Pflicht — sonst setzt die
+   Popover-UA-Regel inset:0 und das Widget landet oben links. */
 function createWidget() {
-  const container = document.createElement('div');
-  container.id = 'mde-listing-btn';
-  container.popover = 'manual';
-  Object.assign(container.style, {
-    position:     'fixed',
-    inset:        'auto 24px 24px auto',
-    top:          'auto',
-    left:         'auto',
-    bottom:       '24px',
-    right:        '24px',
-    margin:       '0',
-    border:       'none',
-    zIndex:       '2147483647',
-    display:      'inline-flex',
-    alignItems:   'center',
-    background:   '#1e293b',
-    color:        '#fff',
-    borderRadius: '12px',
-    padding:      '4px 6px',
-    boxShadow:    '0 4px 20px rgba(0,0,0,.35)',
-    fontFamily:   'system-ui, -apple-system, sans-serif',
-    fontSize:     '13px',
-    gap:          '4px',
-    userSelect:   'none'
+  const wrap = document.createElement('div');
+  wrap.id = 'mde-listing-wrap';
+  wrap.popover = 'manual';   // Top-Layer, damit z-index-Kriege der Seite wirkungslos sind
+  Object.assign(wrap.style, {
+    // 84px = 6px Luft über mydealz' "nach oben"-Button (#btn--moveToTop, 42+36px).
+    position:'fixed',inset:'auto 24px 84px auto',bottom:'84px',right:'24px',
+    top:'auto',left:'auto',zIndex:'2147483647',
+    margin:'0',border:'none',padding:'0',background:'transparent',
+    display:'flex',flexDirection:'column',alignItems:'flex-end',gap:'8px'
   });
 
-  const label = document.createElement('span');
-  label.id = 'mde-label';
-  label.textContent = '📦 Deals';
-  Object.assign(label.style, {
-    padding:     '0 8px',
-    fontWeight:  '700',
-    fontSize:    '13px',
-    whiteSpace:  'nowrap',
-    color:       '#e2e8f0'
-  });
-
-  const makeBtn = (text, title) => {
+  /* Mydealz-Button-Sprache: runde Kapseln, Averta-Typografie, 700er Gewicht. */
+  const makeBtn = (bg, textColor) => {
     const b = document.createElement('button');
-    b.textContent = text;
-    b.title = title;
     Object.assign(b.style, {
-      background:   '#2563eb',
-      color:        '#fff',
-      border:       'none',
-      borderRadius: '8px',
-      padding:      '8px 12px',
-      fontSize:     '12px',
-      fontWeight:   '700',
-      cursor:       'pointer',
-      transition:   'background .15s, transform .1s',
-      whiteSpace:   'nowrap'
+      height:'36px',padding:'0 14px',background:bg,color:textColor,
+      border:'none',borderRadius:'999px',fontSize:'12px',fontWeight:'700',
+      fontFamily:'"Averta CY","Helvetica Neue",Helvetica,system-ui,sans-serif',
+      letterSpacing:'.1px',boxShadow:'0 4px 16px rgba(15,23,42,.18)',
+      cursor:'pointer',transition:'background .15s, transform .1s',
+      whiteSpace:'nowrap',maxWidth:'min(340px,74vw)',overflow:'hidden',textOverflow:'ellipsis'
     });
-    b.addEventListener('mouseenter', () => { if (!b.disabled) b.style.background = '#1d4ed8'; });
-    b.addEventListener('mouseleave', () => { if (!b.disabled) b.style.background = '#2563eb'; });
-    b.addEventListener('mousedown',  () => { if (!b.disabled) b.style.transform = 'scale(.96)'; });
-    b.addEventListener('mouseup',    () => { if (!b.disabled) b.style.transform = ''; });
+    b.addEventListener('mousedown', () => { if (!b.disabled) b.style.transform = 'scale(.97)'; });
+    b.addEventListener('mouseup',   () => { b.style.transform = ''; });
     return b;
   };
 
-  const btnJson = makeBtn('JSON', 'Deals als JSON herunterladen');
-  const btnMd   = makeBtn('MD', 'Deals als Markdown herunterladen');
+  const lbl = () => document.getElementById('mde-listing-label');
 
-  const btnPages = makeBtn('+2 Seiten', '2 weitere Seiten dazuladen (max. 2, vorsichtiger Modus)');
-  btnPages.style.background = '#475569';
+  const btnJson = makeBtn('#1d1f20', '#c5c7ca');
+  btnJson.id = 'mde-list-json-btn';
+  btnJson.title = 'Deals als JSON herunterladen';
+  btnJson.innerHTML = '💾 <span id="mde-list-json-label">JSON</span>';
+  btnJson.addEventListener('mouseenter', () => { if (!btnJson.disabled) btnJson.style.background = '#2a2d2f'; });
+  btnJson.addEventListener('mouseleave', () => { if (!btnJson.disabled) btnJson.style.background = '#1d1f20'; });
+
+  const btnMd = makeBtn('#1d1f20', '#c5c7ca');
+  btnMd.id = 'mde-list-md-btn';
+  btnMd.title = 'Deals als Markdown herunterladen';
+  btnMd.innerHTML = '📄 <span id="mde-list-md-label">MD</span>';
+  btnMd.addEventListener('mouseenter', () => { if (!btnMd.disabled) btnMd.style.background = '#2a2d2f'; });
+  btnMd.addEventListener('mouseleave', () => { if (!btnMd.disabled) btnMd.style.background = '#1d1f20'; });
+
+  const btnPages = makeBtn('#1d1f20', '#c5c7ca');
+  btnPages.id = 'mde-list-pages-btn';
+  btnPages.title = '2 weitere Seiten dazuladen (max. 2, vorsichtiger Modus)';
+  btnPages.innerHTML = '➕ <span id="mde-list-pages-label">+2 Seiten</span>';
   let multiPage = false;
+  btnPages.addEventListener('mouseenter', () => { if (!btnPages.disabled) btnPages.style.background = multiPage ? '#15803D' : '#2a2d2f'; });
+  btnPages.addEventListener('mouseleave', () => { if (!btnPages.disabled) btnPages.style.background = multiPage ? '#16A34A' : '#1d1f20'; });
   btnPages.addEventListener('click', () => {
     multiPage = !multiPage;
-    btnPages.style.background = multiPage ? '#16a34a' : '#475569';
+    btnPages.style.background = multiPage ? '#16A34A' : '#1d1f20';
   });
 
-  container.appendChild(label);
-  container.appendChild(btnJson);
-  container.appendChild(btnMd);
-  container.appendChild(btnPages);
+  const btn = makeBtn('#16A34A', '#fff');
+  btn.id = 'mde-listing-btn';
+  btn.style.height = '48px';
+  btn.style.padding = '0 22px';
+  btn.style.fontSize = '14px';
+  btn.style.boxShadow = '0 6px 22px rgba(22,163,74,.4)';
+  btn.innerHTML = '📋 <span id="mde-listing-label">Deals exportieren</span>';
+  btn.addEventListener('mouseenter', () => { if (!btn.disabled) btn.style.background = '#15803D'; });
+  btn.addEventListener('mouseleave', () => { if (!btn.disabled) btn.style.background = '#16A34A'; });
 
   const setBusy = (busy) => {
-    btnJson.disabled = busy;
-    btnMd.disabled   = busy;
-    btnPages.disabled = busy;
-    btnJson.style.opacity = busy ? '.6' : '1';
-    btnMd.style.opacity   = busy ? '.6' : '1';
-    btnPages.style.opacity = busy ? '.6' : '1';
+    for (const b of [btn, btnJson, btnMd, btnPages]) {
+      b.disabled = busy;
+      b.style.opacity = busy ? '.6' : '1';
+      b.style.cursor = busy ? 'progress' : 'pointer';
+    }
   };
 
   const handleExport = async (format) => {
     setBusy(true);
-    label.textContent = '📦 Deals…';
+    lbl().textContent = '📦 Deals…';
 
     try {
       let ids, pageFrom, pageTo;
 
       if (multiPage) {
-        ({ ids, pageFrom, pageTo } = await collectAllIds(msg => { label.textContent = msg; }));
+        ({ ids, pageFrom, pageTo } = await collectAllIds(msg => { lbl().textContent = msg; }));
         if (!ids.length) {
-          label.textContent = '⚠ Keine Deals';
+          lbl().textContent = '⚠ Keine Deals';
           return;
         }
       } else {
         ids = getThreadIds();
         if (!ids.length) {
-          label.textContent = '⚠ Keine Deals';
+          lbl().textContent = '⚠ Keine Deals';
           return;
         }
         const p = new URLSearchParams(window.location.search).get('page');
         pageFrom = pageTo = parseInt(p || '1', 10) || 1;
       }
 
-      const deals = await getDealsWithCache(ids, msg => { label.textContent = msg; });
+      const deals = await getDealsWithCache(ids, msg => { lbl().textContent = msg; });
 
       // Outbound-Links (echter Händler-Link) aus den Vue-Payloads einhängen
       indexOutboundFromDom();
@@ -750,7 +746,8 @@ function createWidget() {
           filters:    Object.keys(filters).length ? filters : null,
           pageFrom,
           pageTo,
-          dealCount:  deals.length
+          dealCount:  deals.length,
+          commentsExported: 0          // Listing-Export: Deal-Metadaten + Beschreibung, keine Kommentare
         },
         deals
       };
@@ -765,7 +762,7 @@ function createWidget() {
         downloadFile(md, `mydealz_${safeName}_${pageSuffix}.md`, 'text/markdown;charset=utf-8');
       }
 
-      label.textContent = `✅ ${deals.length} exportiert`;
+      lbl().textContent = `✅ ${deals.length} exportiert`;
     } catch (err) {
       log.error('Export fehlgeschlagen', err);
 
@@ -777,56 +774,51 @@ function createWidget() {
       else if (err.message?.includes('XSRF') || err.message?.includes('CSRF')) uiMsg = 'CSRF-Fehler';
       else if (err.message) uiMsg = err.message.slice(0, 22);
 
-      label.textContent = `❌ ${uiMsg}`;
+      lbl().textContent = `❌ ${uiMsg}`;
     } finally {
       setBusy(false);
       setTimeout(() => {
-        label.textContent = '📦 Deals';
+        lbl().textContent = 'Deals exportieren';
       }, 3500);
     }
   };
 
   btnJson.addEventListener('click', () => handleExport('json'));
   btnMd.addEventListener('click',   () => handleExport('md'));
+  btn.addEventListener('click',     () => handleExport('json'));   // Haupt-CTA: JSON als Default
 
-  return container;
+  // Reihenfolge: Sekundäres oben, Haupt-CTA unten — direkt über mydealz' "nach oben".
+  wrap.appendChild(btnJson);
+  wrap.appendChild(btnMd);
+  wrap.appendChild(btnPages);
+  wrap.appendChild(btn);
+
+  return wrap;
 }
 
-/* ── Ist das eine Listing-Seite? ── */
+/* ── Ist das eine Listing-Seite? ──
+   Option 2: nur Suche und Gruppen. Startseite, /deals*, /neu*, /beliebt*,
+   /highlights*, /gutscheine* und alle Detailseiten bleiben ohne Widget. */
 function isListingPage() {
   const p = window.location.pathname;
-
-  // Detailseiten mit ID am Ende explizit ausschließen (Deals, Gutscheine, Diskussionen)
-  if (/\/(?:deals|gutscheine|diskussion)\/[^/]+-\d+$/.test(p)) return false;
-
   return (
-    p === '/' ||
-    p === '/deals' ||
-    p.startsWith('/deals-') ||
     p.startsWith('/search') ||
     p.startsWith('/gruppe/') ||
-    p.startsWith('/group/') ||
-    p.startsWith('/gutschein') ||
-    p.startsWith('/alle-deals') ||
-    p.startsWith('/neu') ||
-    p.startsWith('/beliebt') ||
-    p.startsWith('/highlights') ||
-    p.startsWith('/zeitgeist') ||
-    p.startsWith('/hei')    // /heiß oder /heiss
+    p.startsWith('/group/')
   );
 }
 
 /* ── Initialisierung (mit SPA-Support) ── */
 function mount() {
-  if (!isListingPage()) return;
-  if (document.getElementById('mde-listing-btn')) return;
+  if (!isListingPage()) { unmount(); return; }
+  if (document.getElementById('mde-listing-wrap')) return;
   const widget = createWidget();
   document.body.appendChild(widget);
   try { widget.showPopover(); } catch (_) {}
 }
 
 function unmount() {
-  document.getElementById('mde-listing-btn')?.remove();
+  document.getElementById('mde-listing-wrap')?.remove();
 }
 
 // Erster Mount
