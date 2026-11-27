@@ -143,6 +143,8 @@ function renderStats() {
   const r = s.reactions || {};
   const authorCount = s.authorCommentCount || 0;
   const hidden = s.totalHiddenReplies || 0;
+  const total = (s.totalTopLevel || 0) + (s.totalRepliesVisible || 0);
+  const totalFormatted = total.toLocaleString('de-DE');
   const card = (num, label, extra = '', title = '') =>
     `<div class="stat-card${extra}"${title ? ` title="${esc(title)}"` : ''}>`
     + `<div class="stat-num">${num}</div><div class="stat-lbl">${label}</div></div>`;
@@ -159,6 +161,11 @@ function renderStats() {
 
   document.getElementById('stats-section').innerHTML = `<div class="stats-grid">${cards}</div>`
     + (hidden > 0 ? `<p class="warn-note">⚠ ${hidden} Replies nicht abrufbar (mydealz API-Limit)</p>` : '');
+
+  const titleEl = document.getElementById('scan-title');
+  if (titleEl) {
+    titleEl.innerHTML = '📊 Deal-Scan <span style="font-weight:400;color:var(--text-muted);font-size:14px;">(' + totalFormatted + ' Kommentare)</span>';
+  }
 }
 
 /* ── Linkliste pro Konversation (nur noch für den MD-Export) ── */
