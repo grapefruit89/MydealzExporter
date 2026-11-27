@@ -38,22 +38,50 @@ Aufgabe: Untersuche Produktstärken/-schwächen, Händler-Seriosität, Fallstric
    `systemInstruction` gesetzt; die Antwort selbst bleibt deutsch
    (Output-Invariante im Prompt). */
 const SYSTEM_PROMPT = `Act as an elite, objective e-commerce intelligence auditor specializing in deal evaluation and community sentiment analysis.
-You operate strictly under three architectural principles:
+You operate strictly under four architectural principles:
 1. [anchor:ssot-principle]: The Deal Header (title, verified price, merchant, voucher codes, creator notes) is the authoritative Ground Truth.
 2. [anchor:separation-of-concerns]: Strictly decouple hard deal parameters (retailer terms, shipping, vouchers) from subjective community feedback and user anecdotes.
 3. [anchor:genchi-genbutsu]: Every community claim or criticism MUST cite specific comment evidence using the comment ID in square brackets (e.g., [#ID] by @author).
+4. [anchor:design-system]: Format strictly in Typora- and Obsidian-compliant standard GitHub-Flavored Markdown (clean H2/H3 hierarchy, markdown tables, callout blockquotes, typographic whitespace, zero raw HTML).
 
 OUTPUT FORMAT INVARIANT: Always generate the final user-facing response in professional, well-structured, clear German Markdown.`;
 
 /* Sechs Standardfragen. Kurz gehalten, damit sie in die 3x2-Kacheln passen;
    die Ausführlichkeit entsteht im Kontext (buildAIContext), nicht im Prompt. */
 const PROMPTS = {
-  summary: 'Erstelle einen strukturierten 360°-Kompaktüberblick: Deal-Eckdaten (Preis, UVP, Ersparnis, Händler, Gutschein), wichtige Nachträge des Erstellers und den Community-Konsens in 3 präzisen Bulletpoints.',
-  sentiment: 'Führe eine quantitative & qualitative Stimmungsanalyse durch: Stimmungsbarometer (geschätzte Verteilung % Positiv / Neutral / Negativ), Hauptgründe für Lob (mit Beleg [#ID] und @Autor), Hauptgründe für Kritik (mit Beleg [#ID] und @Autor) und Verlaufstrend.',
-  questions: 'Identifiziere alle ungeklärten Fragen und Praxistipps: Häufige Verwirrung (Gutscheine, Bedingungen, Cashback), Größen-, Passform- & Kompatibilitätstipps der Nutzer (mit [#ID]) und gelöste Hürden.',
-  highlights: 'Filtere die 5 wertvollsten Kommentare mit dem höchsten Signalwert heraus (nummerierte Liste 1-5 mit @Autor, [#ID], Signalwert-Kategorie wie Vergleichspreis/Zusatztrick/Langzeittest und Kern-Takeaway).',
-  problems: 'Schonungslose Risikoanalyse aller Warnungen und Haken: Bestell- & Lieferrisiken (Storno, Händlerservice), Produktmängel & Retourengründe aus Erfahrungsberichten (mit [#ID]) und versteckte Kosten.',
-  verdict: 'Erstelle eine objektive Kaufberatung: Pro & Contra Matrix der stärksten Argumente, Zielgruppen-Filter (Kaufen wenn... vs. Finger weg wenn...) und ein verbindliches Fazit in maximal 2 Sätzen.'
+  summary: `Create an executive 360° overview in German Markdown.
+1. Top Deal Callout: [Title](URL), Deal Price, Regular Price, Merchant.
+2. Discussion Cockpit: Provide a concise 1-2 sentence briefing for each core dimension:
+   - 📊 Stimmung: Overall mood & consensus.
+   - ⚠ Größte Haken: Biggest pitfalls or warnings (cite [#ID]).
+   - ❓ Offene Fragen: Unresolved questions or eligibility hurdles.
+   - ⭐ Wichtigster Community-Tipp: Best actionable advice or price trick (cite [#ID] and @author).
+   - ⚖ Vorläufiges Kurz-Fazit: Who should buy this deal?
+3. Deep-Dive Empfehlung: Which preset button (e.g. ⚠ Probleme, ❓ Offene Fragen, ⚖ Fazit) should the user inspect next?`,
+  sentiment: `Perform a structured sentiment analysis in German Markdown.
+1. Stimmungsbarometer: Markdown table with columns | Stimmung | Anteil (%) | Trend |.
+2. Hauptgründe für Lob: Top 2-3 positive arguments (cite [#ID] and @author).
+3. Hauptgründe für Kritik: Top 2-3 pain points or complaints (cite [#ID] and @author).
+4. Trend: Has community perception shifted over the course of the thread?`,
+  questions: `Identify unresolved questions and actionable compatibility advice in German Markdown.
+1. Häufige Fragen & Verwirrung: Vouchers, checkout conditions, cashback, delivery constraints.
+2. Praxistipps & Kompatibilität: Community experiences with compatibility/usage (cite [#ID]).
+3. Gelöste Hürden: Important questions that were already successfully clarified in replies.`,
+  highlights: `Extract the 5 highest-signal comments in German Markdown as a numbered list (1-5).
+For each entry provide:
+- Quelle: @author ([#ID])
+- Signalwert-Kategorie: e.g., Besserer Vergleichspreis, Zusatzgutschein, Langzeiterfahrung, Warnung.
+- Kern-Takeaway: 1-2 crisp sentences explaining why this comment is essential reading.`,
+  problems: `Conduct a rigorous risk assessment of all warnings and drawbacks in German Markdown.
+1. Bestell- & Lieferrisiken: Cancellation risk, price-error probability, customer support issues.
+2. Produktmängel & Retourengründe: Known defects or disappointments reported by users (cite [#ID]).
+3. Versteckte Kosten: Return fees, customs, subscription renewal traps, exclusion clauses.`,
+  verdict: `Generate an objective buying decision in German Markdown.
+1. Pro & Contra Matrix: Markdown table comparing the strongest advantages vs. disadvantages.
+2. Zielgruppen-Filter:
+   - 🟢 Kaufen wenn: Exactly who benefits most from this offer?
+   - 🔴 Finger weg wenn: Who should stay away?
+3. Verbindliches Endurteil: Clear recommendation in maximum 2 sentences.`
 };
 
 /* Score: noteworthy*4 + helpful*3 + replies*3 + like*2 + funny.
@@ -464,10 +492,15 @@ function needsComments(prompt) {
 function dealHeader() {
   const { meta } = deal;
   return [
-    `DEAL: ${meta.title}`,
+    '=== DEAL-STECKBRIEF (GROUND TRUTH) ===',
+    meta.title ? `TITEL: ${meta.title}` : '',
     meta.price ? `PREIS: ${meta.price}` : '',
+    meta.nextBestPrice ? `NORMALPREIS: ${meta.nextBestPrice}` : '',
     meta.merchant ? `HAENDLER: ${meta.merchant}` : '',
-    meta.temperature ? `TEMPERATUR: ${meta.temperature}` : ''
+    meta.author ? `ERSTELLER: @${meta.author}` : '',
+    meta.url ? `URL: ${meta.url}` : '',
+    meta.temperature ? `TEMPERATUR: ${meta.temperature}` : '',
+    '======================================='
   ].filter(Boolean).join('\n');
 }
 
