@@ -1,3 +1,10 @@
+---
+status: active
+type: concept
+tags: [scraping, methodik, graphql, crawler-design]
+summary: "Übertragbare Scraping-Methodik: strukturierte Datenquellen vor CSS-Selektoren, GraphQL-Payloads, Rate-Limits und Drift-Erkennung."
+---
+
 # Exporter-Methodik
 
 Die bewährte Arbeitsweise des MyDealz-Scrapers — übertragbar auf andere Portale

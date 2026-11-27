@@ -1,0 +1,518 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "MyDealz Deal Schema East-West Map",
+  "description": "Semantische Selbstheilungs-Spezifikation: Deterministische Gegenüberstellung von DOM-Selektoren, GraphQL-Schnittstellen und heuristischen KI-Wiederfindungs-Regeln für mydealz Deals.",
+  "version": "2.2",
+  "lastVerified": "2026-11-27",
+  "fields": [
+    {
+      "id": "title",
+      "label": "Produktname / Titel",
+      "semanticIntent": "Der prägnante Titel oder Produktname des Deals. Beschreibt die Ware/Dienstleistung (Marke, Modell, Spezifikationen, ggf. Händlerhinweis).",
+      "visualClues": {
+        "htmlTags": ["h1", "span"],
+        "typography": "Größte Überschrift im Dokumentenkopf, font-weight 700/800, Größe xl bis xxl",
+        "position": "Direkt oberhalb oder neben dem Preis und der Deal-Temperatur"
+      },
+      "dom": {
+        "primary": "h1.thread-title",
+        "fallbacks": [
+          "span.size--all-xl.size--fromW3-xxl",
+          "h1[class*=\"thread-title\"]",
+          "article.thread [data-t=\"threadTitle\"]"
+        ],
+        "extract": "textContent"
+      },
+      "graphql": {
+        "field": "title",
+        "path": "thread.title",
+        "type": "String",
+        "candidates": ["title", "name", "headline", "subject", "threadTitle"]
+      },
+      "validation": {
+        "regex": "^.{3,250}$",
+        "example": "Jack & Jones Herren Glenn Original Jeans (verschiedene Größen)"
+      },
+      "recoveryHeuristic": "Suche die größte Textüberschrift (h1 oder prominentes span) im Hauptartikel vor der Beschreibung. Schließe Seitennavigation und Sidebar aus."
+    },
+    {
+      "id": "price",
+      "label": "Angebotspreis",
+      "semanticIntent": "Der aktuell zu zahlende Endpreis des Angebots in Euro. Dies ist die Zahl, für die der Nutzer den Artikel tatsächlich kaufen kann.",
+      "visualClues": {
+        "unit": "€",
+        "typography": "Fett hervorgehoben (font-weight: 700), meist markenfarbig oder grün akzentuiert",
+        "position": "Direkt neben oder über dem durchgestrichenen Vergleichspreis"
+      },
+      "dom": {
+        "primary": "span.threadItemCard-price.thread-price",
+        "fallbacks": [
+          "span[class*=\"thread-price\"]",
+          "span.thread-price",
+          "[data-t=\"threadPrice\"]"
+        ],
+        "extract": "textContent",
+        "anchor": "€"
+      },
+      "graphql": {
+        "field": "displayPrice",
+        "numericField": "price",
+        "path": "thread.displayPrice",
+        "type": "String",
+        "candidates": ["displayPrice", "price", "currentPrice", "dealPrice", "offerPrice", "finalPrice"]
+      },
+      "validation": {
+        "regex": "^\\d+([.,]\\d{2})?\\s*€?$",
+        "example": "13,99€"
+      },
+      "recoveryHeuristic": "Suche nach Geldbeträgen mit '€' in der Nähe des Titels, die NICHT durchgestrichen sind. In GraphQL nach Feldern mit 'price' oder 'display' filtern."
+    },
+    {
+      "id": "nextBestPrice",
+      "label": "Normalpreis (UVP / Vergleichspreis)",
+      "semanticIntent": "Der ursprüngliche Preis vor dem Rabatt (UVP) oder der beste Vergleichspreis bei anderen Händlern (Idealo/Geizhals). Dient als Basis der Ersparnisrechnung.",
+      "visualClues": {
+        "unit": "€",
+        "styling": "Durchgestrichen (text-decoration: line-through oder CSS-Klasse text--lineThrough)",
+        "color": "Muted / ausgegraut (translucent secondary / grau)",
+        "position": "Unmittelbar neben dem aktuellen Angebotspreis"
+      },
+      "dom": {
+        "primary": "span.text--lineThrough",
+        "fallbacks": [
+          "span[class*=\"text--lineThrough\"]",
+          ".mute--text.text--lineThrough",
+          "[data-t=\"nextBestPrice\"]"
+        ],
+        "extract": "textContent",
+        "anchor": "€"
+      },
+      "graphql": {
+        "field": "nextBestPrice",
+        "path": "thread.nextBestPrice",
+        "type": "Float",
+        "candidates": ["nextBestPrice", "originalPrice", "comparisonPrice", "oldPrice", "msrp", "uvp"]
+      },
+      "validation": {
+        "regex": "^\\d+([.,]\\d{2})?\\s*€?$",
+        "example": "39,99€"
+      },
+      "recoveryHeuristic": "Suche nach einem Betrag mit '€', dessen Elternelement oder Style 'line-through' aufweist oder grau hinterlegt neben dem Hauptpreis steht."
+    },
+    {
+      "id": "discount",
+      "label": "Ersparnis (Prozent / Rabatt)",
+      "semanticIntent": "Der relative Rabatt gegenüber dem Vergleichspreis in Prozent. Wichtig für Filtermagie und Schnäppchen-Klassifizierung.",
+      "visualClues": {
+        "unit": "%",
+        "styling": "Meist als farbiges Badge / Plakette (grün oder rot) mit Minuszeichen",
+        "prefix": "-"
+      },
+      "dom": {
+        "primary": "div.textBadge--green",
+        "fallbacks": [
+          "div[class*=\"textBadge--green\"]",
+          "span.textBadge--green",
+          "[class*=\"discount\"]"
+        ],
+        "extract": "textContent",
+        "anchor": "%"
+      },
+      "graphql": {
+        "field": "priceDiscount",
+        "fallbackField": "priceOff",
+        "path": "thread.priceDiscount",
+        "type": "Float",
+        "candidates": ["priceDiscount", "priceOff", "percentage", "discountPercentage", "savings"]
+      },
+      "validation": {
+        "regex": "^-?\\d+%$",
+        "example": "-65%"
+      },
+      "recoveryHeuristic": "Suche nach einem Badge mit Prozentzeichen '%' und Minus '-' im Kopfbereich neben den Preisen."
+    },
+    {
+      "id": "temperature",
+      "label": "Dealbewertung / Temperatur",
+      "semanticIntent": "Die von der Community vergebene Bewertung in Grad (°). Positive Werte = heiß/beliebt (>100° = Hot, >500° = SuperHot); negative Werte = kalt/unbeliebt.",
+      "visualClues": {
+        "unit": "°",
+        "color": "Rot/Orange bei heißen Deals, Blau bei kalten Deals",
+        "position": "Im Vote-Bereich mit Plus- und Minus-Buttons"
+      },
+      "dom": {
+        "primary": ".vote-temp",
+        "fallbacks": [
+          "span.overflow--wrap-off[title*=\"Grad\"]",
+          "span[class*=\"vote-temp\"]",
+          "[data-t=\"voteTemp\"]"
+        ],
+        "extract": "textContent",
+        "anchor": "°"
+      },
+      "graphql": {
+        "field": "temperature",
+        "levelField": "temperatureLevel",
+        "path": "thread.temperature",
+        "type": "Float",
+        "candidates": ["temperature", "votesScore", "score", "temp", "temperatureLevel"]
+      },
+      "validation": {
+        "regex": "^-?\\d+°?$",
+        "example": "587°"
+      },
+      "recoveryHeuristic": "Suche nach Zahlen gefolgt von einem Grad-Symbol '°' innerhalb des Abstimmungs-Bereichs."
+    },
+    {
+      "id": "createdAt",
+      "label": "Datum / Erstellzeitpunkt",
+      "semanticIntent": "Der genaue Veröffentlichungszeitpunkt des Deals. Im DOM dynamisch relativ ('Gepostet vor 4 Stunden'), in GraphQL mathematisch absolut.",
+      "visualClues": {
+        "anchorWords": ["Gepostet", "vor", "Uhr", "Erstellt"],
+        "attribute": "title enthält oft das absolute Datum 'DD.MM.YYYY, HH:MM:SS'"
+      },
+      "dom": {
+        "primary": "span[title][class*=\"color--text-TranslucentSecondary\"]",
+        "fallbacks": [
+          "span.threadItemCard-timestamp",
+          "[data-t=\"timestamp\"]",
+          "time"
+        ],
+        "extract": "attribute:title",
+        "fallbackExtract": "textContent",
+        "anchor": "Gepostet"
+      },
+      "graphql": {
+        "field": "createdAt",
+        "timestampField": "createdAtTs",
+        "path": "thread.createdAt",
+        "type": "String",
+        "candidates": ["createdAt", "createdAtTs", "publishedAt", "createDate", "date"]
+      },
+      "validation": {
+        "regex": "^(\\d{2}\\.\\d{2}\\.\\d{4}|\\d{4}-\\d{2}-\\d{2})",
+        "example": "27.11.2026, 06:21:35"
+      },
+      "recoveryHeuristic": "Bevorzuge immer GraphQL createdAtTs (Unix-Epoch). Im DOM nach einem span mit title-Attribut suchen, das das Wort 'Gepostet' oder ein Datumsformat trägt."
+    },
+    {
+      "id": "merchant",
+      "label": "Händler / Onlineshop",
+      "semanticIntent": "Der Shop oder Anbieter, bei dem das Angebot wahrgenommen werden kann (z. B. Amazon, OTTO, MediaMarkt, Coolblue).",
+      "visualClues": {
+        "htmlTag": "a",
+        "linkTarget": "Verlinkt meist auf /search/deals?merchant-id=... oder /händler/...",
+        "position": "Beim Angebotspreis oder über der Beschreibung"
+      },
+      "dom": {
+        "primary": "a[data-t=\"merchantLink\"]:not(.navMenu-link)",
+        "fallbacks": [
+          "[class*=\"cept-merchant-name\"]",
+          "a[href*=\"merchant-id=\"]",
+          ".threadItemCard-merchant"
+        ],
+        "extract": "textContent",
+        "pitfall": "Ohne :not(.navMenu-link) liefert document.querySelector den ersten Treffer aus dem Gutschein-Navi (OTTO, MediaMarkt, ...) statt den echten Händler. Verifiziert 2026-11-27 an Thread 2883187: 50+ navMenu-Treffer vor dem Deal-Kopf."
+      },
+      "graphql": {
+        "field": "merchant.merchantName",
+        "idField": "merchant.merchantId",
+        "path": "thread.merchant.merchantName",
+        "type": "String",
+        "candidates": ["merchant", "merchantName", "store", "shop", "vendor"]
+      },
+      "validation": {
+        "regex": "^.{2,100}$",
+        "example": "Amazon"
+      },
+      "recoveryHeuristic": "Suche nach Links mit merchantLink im data-t Attribut oder Links, die 'merchant-id=' in der URL führen."
+    },
+    {
+      "id": "author",
+      "label": "Dealersteller (Autor)",
+      "semanticIntent": "Der Benutzername des mydealz-Community-Mitglieds, das diesen Deal eingereicht oder veröffentlicht hat.",
+      "visualClues": {
+        "htmlTag": "a",
+        "linkTarget": "Verlinkt auf /profile/{username}",
+        "icon": "Oft neben einem Avatar-Bild platziert"
+      },
+      "dom": {
+        "primary": ".thread-user a",
+        "fallbacks": [
+          "span.thread-user",
+          ".threadItemCard-author .thread-user",
+          ".short-profile-target .thread-user"
+        ],
+        "extract": "textContent"
+      },
+      "graphql": {
+        "field": "user.username",
+        "idField": "user.userId",
+        "path": "thread.user.username",
+        "type": "String",
+        "candidates": ["user", "author", "creator", "username"]
+      },
+      "validation": {
+        "regex": "^[a-zA-Z0-9_.-]{2,50}$",
+        "example": "Robert_Chi"
+      },
+      "recoveryHeuristic": "Suche nach Profil-Links (/profile/...) im Autorenbereich des Artikels."
+    },
+    {
+      "id": "dealLink",
+      "label": "Link zum Angebot (Direkt- / Partner-Link)",
+      "semanticIntent": "Die URL, die direkt zum Angebot beim Händler führt (oft über Tracking-/Affiliate-Redirects wie /visit/...).",
+      "visualClues": {
+        "htmlTag": "a",
+        "appearance": "Großer auffälliger Call-to-Action Button ('Zum Deal', 'Angebot anzeigen')",
+        "target": "_blank"
+      },
+      "dom": {
+        "primary": "a[data-t=\"getDeal\"]",
+        "fallbacks": [
+          "a.button--mode-brand[target=\"_blank\"]",
+          "a[data-t-click*=\"ocular\"]"
+        ],
+        "extract": "attribute:href"
+      },
+      "graphql": {
+        "field": "url",
+        "shareField": "shareableLink",
+        "path": "thread.url",
+        "type": "String",
+        "candidates": ["url", "dealUrl", "link", "outboundUrl", "shareableLink"]
+      },
+      "validation": {
+        "regex": "^https?://",
+        "example": "https://www.amazon.de/dp/..."
+      },
+      "recoveryHeuristic": "Suche nach dem primären CTA-Button mit data-t='getDeal' oder target='_blank' und dem Button-Text 'Zum Deal'."
+    },
+    {
+      "id": "description",
+      "label": "Informationstext vom Dealersteller",
+      "semanticIntent": "Der vom Autor verfasste Fließtext mit Artikelbeschreibungen, Gutscheincodes, Highlights und Bedingungen.",
+      "visualClues": {
+        "container": "div mit userHtml oder userHtml-content",
+        "content": "Enthält Absätze (<p>), Aufzählungen (<ul>/<li>) und Fettschrift (<strong>)"
+      },
+      "dom": {
+        "primary": "div[data-t=\"description\"]",
+        "fallbacks": [
+          "#threadDescriptionItemPortal .userHtml-content",
+          "div.userHtml.userHtml-content",
+          "main [class*=\"userHtml-content\"]"
+        ],
+        "extract": "innerHTML"
+      },
+      "graphql": {
+        "field": "description",
+        "path": "thread.description",
+        "type": "String",
+        "candidates": ["description", "content", "body", "htmlText"]
+      },
+      "validation": {
+        "regex": "^.{10,}$",
+        "example": "<p><strong>Info zu diesem Artikel</strong></p>..."
+      },
+      "recoveryHeuristic": "Suche nach dem Container mit data-t='description' oder der Klasse userHtml-content im Hauptartikel."
+    },
+    {
+      "id": "commentCount",
+      "label": "Anzahl Kommentare",
+      "semanticIntent": "Die Gesamtzahl der abgegebenen Kommentare zu diesem Deal.",
+      "visualClues": {
+        "anchorWord": "Kommentare",
+        "icon": "Sprechblasen-Symbol"
+      },
+      "dom": {
+        "primary": "a[data-t=\"commentsLink\"]",
+        "fallbacks": [
+          "span.size--all-l.size--fromW3-xl.text--b",
+          "a[title=\"Kommentare\"]",
+          "[class*=\"commentCount\"]"
+        ],
+        "extract": "textContent",
+        "anchor": "Kommentar"
+      },
+      "graphql": {
+        "field": "commentCount",
+        "paginationPath": "comments.pagination.count",
+        "path": "thread.commentCount",
+        "type": "Int",
+        "candidates": ["commentCount", "totalComments", "commentsTotal", "count"]
+      },
+      "validation": {
+        "regex": "\\d+",
+        "example": "20"
+      },
+      "recoveryHeuristic": "Suche nach Zahlen gefolgt vom Wort 'Kommentare' oder dem data-t='commentsLink' Anker."
+    },
+    {
+      "id": "comments",
+      "label": "Kommentare & Diskussions-Baum",
+      "semanticIntent": "Die einzelnen Benutzerbeiträge unterhalb des Deals inklusive Hierarchie (Replies), Reaktionen und Löschstati.",
+      "dom": {
+        "primary": "li.commentList-item[data-id], div.comment-replies-item[data-id]",
+        "topLevelSelector": "li.commentList-item[data-id]",
+        "replySelector": "div.comment-replies-item[data-id]",
+        "repliesContainer": "section.comment-replies",
+        "commentIdAttr": "data-id",
+        "topLevelIdPrefix": "comment-<id>",
+        "replyIdPrefix": "reply-<id>",
+        "parentIdAttr": null,
+        "parentIdNote": "data-parent-id existiert im DOM NICHT (0 Treffer, gemessen 2026-11-27). Der DOM unterscheidet nur top-level vs. Antwort; die echte Tiefe liefert ausschliesslich GraphQL parentCommentId.",
+        "textSelector": ".comment-body, .userHtml",
+        "moreRepliesButton": "button[data-t=\"moreReplies\"]",
+        "reactionsSelector": "button.comment-reactions"
+      },
+      "graphql": {
+        "rootQuery": "comments(filter: { threadId: { eq: $threadId } }, limit: $limit, page: $page)",
+        "replyQuery": "comments(filter: { threadId: { eq: $threadId }, mainCommentId: $mainCommentId }, limit: 100)",
+        "fields": [
+          "commentId",
+          "mainCommentId",
+          "parentCommentId",
+          "isReply",
+          "preparedHtmlContent",
+          "createdAt",
+          "createdAtTs",
+          "wasEdited",
+          "isPinned",
+          "deletedBy { username }",
+          "replyCount",
+          "user { username userId }",
+          "reactionCounts { type count }",
+          "repliesPreview { commentId mainCommentId parentCommentId }"
+        ]
+      },
+      "recoveryHeuristic": "Nutze für Kommentare immer GraphQL, da DOM-Replies erst dynamisch nachgeladen werden müssen. GQL liefert stets den kompletten Thread unabhängig von Paginierung."
+    },
+    {
+      "id": "commentHierarchy",
+      "label": "Kommentar-Hierarchie (Top-Level vs. Antwort)",
+      "semanticIntent": "Unterscheidet Hauptkommentare von Antworten und bildet die Verschachtelungstiefe ab: 0 = Top-Level-Kommentar, 1 = direkte Antwort, 2+ = Antwort auf eine Antwort.",
+      "visualClues": {
+        "topLevel": "Eingerückte Listenzeile (li) mit Kommentar-Avatar direkt unter dem Deal",
+        "reply": "Visuell eingerückt unter dem Elternkommentar, innerhalb eines Antwort-Containers",
+        "depth": "Zunehmende Einrückung pro Ebene; mydealz rendert Antworten flach im Container, nicht rekursiv verschachtelt"
+      },
+      "dom": {
+        "topLevelPrimary": "li.commentList-item[data-id]",
+        "replyPrimary": "div.comment-replies-item[data-id]",
+        "repliesContainer": "section.comment-replies",
+        "topLevelIdPattern": "^comment-",
+        "replyIdPattern": "^reply-",
+        "parentIdAttr": null,
+        "extract": "id / data-id",
+        "note": "DOM liefert nur die Binärinformation top-level vs. Antwort. Kein data-parent-id, keine Tiefe."
+      },
+      "graphql": {
+        "isReplyField": "isReply",
+        "parentField": "parentCommentId",
+        "rootField": "mainCommentId",
+        "levelField": null,
+        "levelDerivation": "level = Anzahl der parentCommentId-Sprünge bis parentCommentId == null (clientseitig, in content.js assignLevels())",
+        "mapping": {
+          "topLevel": "isReply = false, parentCommentId = null, mainCommentId = null, level = 0",
+          "directReply": "isReply = true, parentCommentId = <rootId>, mainCommentId = <rootId>, level = 1",
+          "nestedReply": "isReply = true, parentCommentId = <replyId>, mainCommentId = <rootId>, level >= 2"
+        },
+        "fields": ["isReply", "parentCommentId", "mainCommentId"]
+      },
+      "validation": {
+        "regex": "^[0-9]+$",
+        "example": "0 = Top-Level, 1 = Antwort, 2 = Antwort auf Antwort",
+        "measuredDistribution": "Thread 2883187 (2026-11-27): Level 0 = 9, Level 1 = 7, Level 2 = 4, Level 3 = 2, Level 4 = 1"
+      },
+      "recoveryHeuristic": "Verlasse dich nie auf die DOM-Position für die Tiefe. Nutze GraphQL isReply + parentCommentId und baue die Kette bis null; mainCommentId ist nur der Root, nicht der direkte Parent."
+    },
+    {
+      "id": "reactions",
+      "label": "Reaktionen (👍 Gefällt mir, 😄 Lustig, 💡 Hilfreich)",
+      "dom": {
+        "primary": "button.comment-reactions",
+        "like": ".comment-like",
+        "funny": ".comment-funny",
+        "helpful": ".comment-helpful"
+      },
+      "graphql": {
+        "field": "reactionCounts",
+        "types": ["LIKE", "FUNNY", "HELPFUL"],
+        "mapping": {
+          "LIKE": "like",
+          "FUNNY": "funny",
+          "HELPFUL": "helpful"
+        }
+      },
+      "recoveryHeuristic": "Reaktionen werden in GQL als Array von { type, count } geliefert. Erlaubte Typen: LIKE, FUNNY, HELPFUL."
+    },
+    {
+      "id": "noteworthy",
+      "label": "Wertvoller Kommentar (Editor-/Algorithmus-Badge)",
+      "semanticIntent": "Besonders lesenswerter Kommentar, der persönliche Erfahrungsberichte teilt (von Redaktion oder Algorithmus als 'Wertvoll' markiert).",
+      "visualClues": {
+        "badgeText": "Wertvoll",
+        "icon": "Glühbirne (#bulb / icon--bulb)",
+        "interactive": "Öffnet beim Klick einen Dialog mit Erklärung"
+      },
+      "dom": {
+        "primary": "div[data-t=\"noteworthy\"]",
+        "badgeButton": "div[data-t=\"noteworthy\"] button",
+        "icon": "svg use[xlink:href*=\"#bulb\"]",
+        "extract": "textContent",
+        "anchor": "Wertvoll"
+      },
+      "graphql": {
+        "field": null,
+        "note": "Wird von mydealz/Pepper rein im Frontend-DOM gerendert (kein direktes GQL-Feld). Im Client per DOM-Id-Set annotiert."
+      },
+      "validation": {
+        "regex": "Wertvoll",
+        "example": "Wertvoll"
+      },
+      "recoveryHeuristic": "Suche nach Elementen mit dem data-t='noteworthy' Attribut oder Text 'Wertvoll' und einem Glühbirnen-Symbol innerhalb des Kommentar-Headers."
+    },
+    {
+      "id": "authorBadge",
+      "label": "Autor*in-Badge / Ersteller-Kommentar",
+      "semanticIntent": "Markiert einen Kommentar als Beitrag des Dealerstellers (Thread-Autors). Solche Beiträge sind Status-Updates zum Angebot (Preis, Verfuegbarkeit, Versand) und fuer die Analyse verbindlicher als Community-Meinungen.",
+      "visualClues": {
+        "badgeText": "Autor*in",
+        "typography": "Kleines graues Pill direkt rechts neben dem Benutzernamen im Kommentar-Header (textBadge, size--all-xs)",
+        "position": "Im Kommentar-Header, zwischen Avatar/Username und Zeitstempel"
+      },
+      "dom": {
+        "primary": "span.textBadge",
+        "fallbacks": [
+          "[class*=\"textBadge\"]",
+          "div.user.userInfo + span [class*=\"textBadge\"]"
+        ],
+        "extract": "textContent",
+        "anchor": "Autor*in",
+        "containerSelector": "li.commentList-item[data-id], div.comment-replies-item[data-id]",
+        "idAttr": "data-id",
+        "pitfall": "Das Badge wird erst clientseitig gerendert (im Server-HTML 0 Treffer, gemessen 2026-11-27). Es ist KEIN GraphQL-Feld."
+      },
+      "graphql": {
+        "field": null,
+        "derivation": "isAuthor = comment.user.userId === thread.user.userId (primaer) ODER comment.user.username === thread.user.username (Fallback) ODER DOM-Badge am Kommentar",
+        "fields": [
+          "comment.user.userId",
+          "comment.user.username",
+          "thread.user.userId",
+          "thread.user.username"
+        ],
+        "statsField": "stats.authorCommentCount",
+        "idsField": "stats.authorCommentIds",
+        "indexField": "stats.userIndex[]",
+        "nodeFields": ["isAuthor", "authorSeq", "authorTotal", "authorRefs"]
+      },
+      "validation": {
+        "regex": "^Autor(\\*in)?$",
+        "example": "Autor*in"
+      },
+      "recoveryHeuristic": "Vergleiche die userId des Kommentar-Autors mit der userId des Thread-Autors; ohne userId genuegt der exakte Username-Vergleich. Nur wenn beides fehlt, das DOM-Badge 'Autor*in' im Kommentar-Header suchen (closest('[data-id]') liefert die Kommentar-ID)."
+    }
+  ]
+}

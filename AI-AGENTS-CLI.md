@@ -1,3 +1,10 @@
+---
+status: active
+type: tool-guide
+tags: [agent-workflow, cdp, devtools]
+summary: "Praktische Anleitung zum Laden, Debuggen und Automatisieren der Extension über Chrome DevTools, CDP und KI-Agenten-Workflows."
+---
+
 # AI-AGENTS-CLI
 
 Stand: 2026-09-04  

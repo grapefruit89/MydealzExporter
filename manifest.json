@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "MyDealz AI Exporter",
-  "version": "17.1",
+  "version": "17.7",
   "description": "Deal-Exporter & KI-Kommentar-Analyse für mydealz.de",
   "permissions": ["storage", "tabs", "clipboardWrite", "downloads"],
   "host_permissions": [
@@ -9,14 +9,14 @@
     "https://generativelanguage.googleapis.com/*"
   ],
   "icons": {
-    "16":  "icons/icon16.png",
-    "48":  "icons/icon48.png",
-    "128": "icons/icon128.png"
+    "16":  "ui/icon16.png",
+    "48":  "ui/icon48.png",
+    "128": "ui/icon128.png"
   },
   "content_scripts": [
     {
       "matches": ["https://www.mydealz.de/deals/*", "https://www.mydealz.de/gutscheine/*", "https://www.mydealz.de/diskussion/*"],
-      "js": ["content/link-share.js", "content/fetch-share.js", "content/content.js"],
+      "js": ["content/content.js"],
       "run_at": "document_idle"
     },
     {
@@ -39,20 +39,20 @@
         "https://www.mydealz.de/gutscheine?*",
         "https://www.mydealz.de/?*"
       ],
-      "js": ["content/link-share.js", "content/fetch-share.js", "content/listing.js"],
+      "js": ["content/listing.js"],
       "run_at": "document_idle"
     }
   ],
   "background": {
-    "service_worker": "background/service_worker.js"
+    "service_worker": "service-worker.js"
   },
   "action": {
-    "default_popup": "popup/popup.html",
+    "default_popup": "ui/popup.html",
     "default_title": "MyDealz AI Exporter",
     "default_icon": {
-      "16":  "icons/icon16.png",
-      "48":  "icons/icon48.png",
-      "128": "icons/icon128.png"
+      "16":  "ui/icon16.png",
+      "48":  "ui/icon48.png",
+      "128": "ui/icon128.png"
     }
   },
   "web_accessible_resources": [{

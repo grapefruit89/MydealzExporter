@@ -1,3 +1,10 @@
+---
+status: active
+type: reference
+tags: [mydealz, graphql, schema, insights, drift]
+summary: "GraphQL- und DOM-Eigenheiten der mydealz/Pepper-API: Thread-ID-Constraint, repliesPreview-Nesting, Drift-Signale und Filterregeln."
+---
+
 # MyDealz Data Structure & Signal Analysis
 
 Based on the Deep-Dive Extraction, here are the specific peculiarities of the MyDealz/Pepper GraphQL API and how we will filter for "Product Focus".
@@ -142,8 +149,10 @@ aus dem HTML (`props.thread`) und die Pepper-AJAX-Endpunkte.
     `wasEdited`/`isPinned` für die nächste COMMENT_FIELDS-Erweiterung.
 *   **Inline-Links im Kommentartext** → übernommen (`cleanText` ersetzt
     `<a>` durch `[label](href)`-Textknoten; zusätzlich `links[]`-Array).
-*   **OP-Markierung** → übernommen (Dashboard: `👑 OP`-Badge bei Kommentaren
-    des Deal-/Diskussionsautors; Quelle: `meta.author`).
+*   **OP-Markierung** → übernommen und ausgebaut (Dashboard: `👑 Autor*in`-Badge,
+    `📌 Updates`-Tab, `stats.authorCommentCount`, `stats.userIndex`, `authorRefs[]`;
+    Quelle: `comment.user.userId === thread.user.userId`, Fallback Username,
+    Fallback DOM-Badge `Autor*in` — siehe Drift-Abschnitt).
 *   **Retry-After-Header** → übernommen (429: Server-Hinweis schlägt Eigen-Backoff).
 *   **IndexedDB-Cache (1h TTL, pro Thread) + AbortController** → geparkt.
     Der Cache ist das Usercript-Derivat vom geplanten `chrome.storage.session`
@@ -165,3 +174,72 @@ aus dem HTML (`props.thread`) und die Pepper-AJAX-Endpunkte.
 *   Multi-Country-Support, CSV-Export, Bild-Download — außerhalb der zwei
     eingefrorenen Use-Cases (siehe review_grok.md §11).
 *   Kein Kommentar-Support im Tool — unser GraphQL-Walker (§1) bleibt der Moat.
+
+
+### GQL- & DOM-Drifts (Stand 2026-11-27)
+
+*   **`keywordNames` entfernt:** Im GraphQL-Schema existiert das Feld `keywordNames` auf `Thread` nicht mehr (warf `Cannot query field "keywordNames" on type "Thread"`). Wurde aus `THREAD_FIELDS` entfernt.
+*   **`[data-t="noteworthy"]` (Wertvoller Kommentar):** Neues Redaktions-/Algorithmen-Feature von Pepper.com. Das Badge zeigt ein Glühbirnen-Icon (`#bulb`) und den Text `"Wertvoll"` für Kommentare mit substanziellen Produkterfahrungen. Existiert rein im DOM (nicht im GQL-Schema); wird clientseitig über `document.querySelectorAll('[data-t="noteworthy"]')` abgegriffen und im Dashboard als `💡 Wertvoll` gerendert (+4 im Score-Ranking).
+*   **`Autor*in`-Badge (Ersteller-Kommentar, DOM-only, 2026-11-27):** mydealz markiert Beiträge des Dealerstellers clientseitig mit einem `textBadge` der Textklasse `size--all-xs` und dem Text `Autor*in` im Kommentar-Header (`<div class="user userInfo…">…<span class="textBadge …">Autor*in</span>`). Im Server-HTML 0 Treffer (gemessen an Thread 2883187) und im GraphQL-`Comment`-Typ **kein** entsprechendes Feld. Erkennung deshalb dreistufig: `comment.user.userId === thread.user.userId` → exakter Username-Vergleich (`meta.author`) → DOM-Badge über `closest('[data-id]')`. Client: `content.js` → `annotateAuthors()` setzt `isAuthor`, `authorSeq`/`authorTotal`, `authorRefs[]` (Cross-Linking) sowie `stats.authorCommentCount`, `stats.authorCommentIds[]` und `stats.userIndex[]`.
+*   **Bild-CDN-Muster:** Das alte `/fs/895x577/qt/65/{uid}`-Schema antwortet mit HTTP 404. Das aktuelle Muster lautet: `https://static.mydealz.de/${mainImage.path}/${uidClean}/re/1024x1024/qt/60/${uidClean}.jpg` (wobei `uidClean = uid.replace(/\.raw$/, '')`).
+*   **`[data-t="merchantLink"]` ist doppelt belegt (2026-11-27):** Der Selektor matcht **auch das Gutschein-Navi** (50+ Shops, Klasse `navMenu-link`, in DOM-Reihenfolge **vor** dem Deal-Kopf). `document.querySelector('[data-t="merchantLink"]')` lieferte deshalb `OTTO` für einen Amazon-Deal. Korrekt: `a[data-t="merchantLink"]:not(.navMenu-link)` — dann genau ein Treffer im Deal-Kopf. Betraf `content.js` (`extractMetadata`) und `tools/health-check.mjs` (East-West-Abgleich), beide korrigiert.
+*   **LIVE-Drift vs. Schema-Drift:** Temperatur und Kommentarzahl im DOM sind Momentaufnahmen beim Seitenaufbau. Weichen sie von der frischen GraphQL-Antwort ab (`631°` vs. `672,91°`, `22` vs. `23`), ist das **kein** Selektorfehler. `health-check` markiert diese zwei Felder als `LIVE` (gelb) und zählt sie nicht als Fehler; Titel/Preis/UVP/Händler bleiben harte `MATCH`/`DIVERGE`-Gates.
+*   **Zeitstempel (DOM vs. GQL):** DOM zeigt dynamisch relative Texte (`vor 55 m`, `vor 4 Stunden`). GraphQL liefert mit `createdAtTs` den exakten Unix-Timestamp in Sekunden und mit `createdAt` den ISO-8601-String — GQL ist für chronologische Sortierung und Zeitvergleiche stets die bevorzugte Quelle.
+    **KORREKTUR (2026-11-27, Thread 2883187):** Die Aussage „`createdAt` ist ISO-8601" ist **falsch**. `Comment.createdAt` und `Comment.updatedAt` liefern **relative deutsche Strings** (`"vor 36 m"`, `"vor 23 m"`); nur `createdAtTs` ist der exakte Unix-Wert. `Thread.createdAt`/`publishedAt`/`updatedAt`/`hotDate` sind dagegen **Unix-Ints**, ebenfalls kein ISO-String. Messung: `/tmp/mydealz-thread-2883187.json`.
+
+### Keyword- & Tag-Inventur (Stand 2026-11-27, Thread 2883187)
+
+**Es gibt kein `tags`-Feld.** Alle Kandidaten geprüft, alle abgelehnt:
+
+| Kandidat | Ergebnis | Fehlermeldung |
+|---|---|---|
+| `Thread.tags` | existiert nicht | `Cannot query field "tags" on type "Thread".` |
+| `Thread.badges` | existiert nicht | `Cannot query field "badges" on type "Thread". Did you mean "images"?` |
+| `Thread.keywords` | existiert nicht | `Cannot query field "keywords" on type "Thread".` |
+| `Thread.keywordNames` | **im Schema, Resolver defekt** | `errors[].path = ["thread","keywordNames"]` → `Internal server error` |
+| `Thread.issueCount` | **im Schema, Resolver defekt** | `errors[].path = ["thread","issueCount"]` → `Internal server error` |
+| `Comment.tags` | existiert nicht | `Cannot query field "tags" on type "Comment".` |
+
+> ⚠️ **`keywordNames` ist eine Falle:** Das Feld validiert gegen das Schema (kein „Cannot query field"), die Antwort ist HTTP 200 mit `errors` und `data.thread = null`. Ein Export, der es mitschickt, verliert den **kompletten Thread**. Deshalb ist es aus `THREAD_FIELDS` entfernt — die frühere Diagnose „Feld existiert nicht mehr" war unpräzise: Es existiert, aber der Resolver antwortet nicht.
+
+**Die vier belastbaren Keyword-Quellen:**
+
+1. **`groups` (einzige echte Tag-Quelle):** flaches Array Root → Blatt, z. B.
+   `Fashion & Accessoires → Kleidung → Hosen → Jeans → JACK & JONES`.
+   `mainGroup` = tiefste Gruppe; `groupsPath` = gleiche Information, anderer Typ.
+   Praxis: `groups.map(g => g.threadGroupUrlName)` → `["fashion-accessoires","kleidung","hosen","jeans","jack-jones"]`.
+2. **`temperatureLevel`:** serverseitig berechnetes Qualitäts-Tag (`Hot3` bei 662,41°).
+3. **`merchant` + `locations` + `linkHost`:** `Amazon` / `Bundesweit` / `www.amazon.de`. `selectedLocations` ist bei bundesweiten Deals `null`.
+4. **Enums:** `type` (`Deal`), `threadTypeId` (`1`), `status` (`Activated`), `isHot`, `expirable`, `endDate.timestamp`, `voucherCode`.
+
+**Badges sind kein Deal-Tag:** `Thread.badges` existiert nicht; Badges hängen nur am Autor
+(`user.badges[].level.name`, 24 Stück bei `Robert_Chi`) und `Badge` hat genau ein Feld
+(`level { name }`). Für Produktanalyse Rauschen, für Autoren-Vertrauen Signal.
+
+**Rabatt selbst rechnen:** Bei 2883187 sind `priceDiscount` und `priceOff` `null` und
+`percentage` `0`, obwohl `nextBestPrice = 39.99` und `price = 13.99` (~65 % Rabatt).
+Formel: `1 - price / nextBestPrice`.
+
+### Kommentar-Hierarchie: Top-Level vs. Antwort (Stand 2026-11-27)
+
+| Quelle | Top-Level | Antwort |
+|---|---|---|
+| GraphQL `isReply` | `false` | `true` |
+| GraphQL `parentCommentId` | `null` | ID des **direkten** Parents |
+| GraphQL `mainCommentId` | `null` | ID des **Root**-Kommentars |
+| GraphQL `level` | **existiert nicht** | **existiert nicht** |
+| DOM `id` | `comment-<id>` | `reply-<id>` |
+| DOM Container | `li.commentList-item` | `div.comment-replies-item` in `section.comment-replies` |
+| DOM `data-parent-id` | — | **existiert nicht** (0 Treffer) |
+
+*   **`level` wird clientseitig berechnet** (`content/content.js` → `assignLevels()`): Anzahl der
+    `parentCommentId`-Sprünge bis `null`. `mainCommentId` ist dafür **unbrauchbar**, weil es
+    immer der Root ist.
+*   **Gemessene Tiefenverteilung Thread 2883187:** Level 0 = 9, Level 1 = 7, Level 2 = 4,
+    Level 3 = 2, Level 4 = 1. Eine Annahme „jede Antwort ist Level 1" wäre falsch.
+*   **DOM reicht nicht:** `section.comment-replies` ist ein flacher Container; die visuelle
+    Einrückung entsteht per CSS, nicht per Verschachtelung. Nur GraphQL kennt den echten Parent.
+*   **Permalinks:** Top-Level `#comment-<id>`, Antwort `#reply-<id>`; `Comment.url` liefert
+    denselben Link bereits fertig.
+*   **Zähler-Falle:** `thread.commentCount` = Top-Level **plus** Replies (23), während
+    `comments.pagination.count` nur die Top-Level zählt (9).
