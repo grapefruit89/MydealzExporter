@@ -209,8 +209,9 @@ function htmlToText(html) {
 
 /* ── HTML → Markdown (für descriptionMarkdown im MD-Export) ──
    Kleiner Vanilla-Konverter für mydealz-Beschreibungen (Listen, Fett,
-   Links, Bilder, Blockquotes, Code). Kein DOMPurify — wir RENDEREN nicht,
-   wir serialisieren nur in reinen Text (kein XSS-Risiko im MD-File). */
+   Links, Blockquotes, Code). Bilder werden bewusst komplett verworfen.
+   Kein DOMPurify — wir RENDEREN nicht, wir serialisieren nur in reinen
+   Text (kein XSS-Risiko im MD-File). */
 function htmlToMarkdown(html) {
   if (!html) return '';
 
@@ -232,10 +233,7 @@ function htmlToMarkdown(html) {
     const tag = child.tagName;
     if (tag === 'SCRIPT' || tag === 'STYLE') return '';
     if (tag === 'BR') return '\n';
-    if (tag === 'IMG') {
-      const src = child.getAttribute('src') || '';
-      return src ? `![${child.getAttribute('alt') || 'Bild'}](${src})` : '';
-    }
+    if (tag === 'IMG') return '';   // Bilder komplett strippen (kein ![](…)-Markdown)
 
     let inner = '';
     for (const c of child.childNodes) inner += inlineNodeMd(c);
@@ -556,7 +554,10 @@ async function collectAllIds(onProgress) {
   return { ids: all, pageFrom, pageTo };
 }
 
-/* ── Kompaktes Markdown generieren ── */
+/* ── Kompaktes Markdown generieren ──
+   Reines Metadaten-Template, ein Block je Deal: Titel als H2, feste
+   Feldreihenfolge, jede Zeile nur wenn der Wert existiert, dann die
+   bilderfreie Beschreibung und ein Trenner. */
 function buildListMarkdown(exportObj) {
   const { _meta, deals } = exportObj;
   const lines = [
@@ -571,34 +572,46 @@ function buildListMarkdown(exportObj) {
 
   deals.forEach((d, idx) => {
     if (d.error) {
-      lines.push(`### ${idx + 1}. [Deal #${d.id}](${d.url}) – Nicht gefunden`, '', '---', '');
+      lines.push(`## ${idx + 1}. Deal #${d.id} – Nicht gefunden`, '', '---', '');
       return;
     }
 
-    const priceParts = [];
-    if (d.displayPrice || d.price != null) priceParts.push(`**${d.displayPrice || (d.price + '€')}**`);
-    if (d.originalPrice != null) priceParts.push(`~~${d.originalPrice}€~~`);
-    if (d.discountPct != null) priceParts.push(`(-${d.discountPct}%)`);
-    const priceInfo = priceParts.join(' ');
+    lines.push(`## ${idx + 1}. ${d.title || `Deal #${d.id}`}`);
 
-    const metaParts = [
-      d.group ? `🏷 ${d.group}` : null,
-      d.merchant ? `🏪 ${d.merchant}` : null,
-      d.temperature != null ? `🔥 ${d.temperature}°` : null,
-      d.voucherCode ? `🎟 ${d.voucherCode}` : null,
-      d.shippingFree ? `📦 Versand frei` : (d.shipping != null ? `📦 Versand ${d.shipping}€` : null),
-      d.commentCount != null ? `💬 ${d.commentCount}` : null,
-      d.isExpired ? '❌ Abgelaufen' : '✅ Aktiv',
-      d.author ? `👤 @${d.author}` : null
-    ].filter(Boolean);
+    if (d.id != null) lines.push(`- **Deal-ID:** ${d.id}`);
 
-    lines.push(`### ${idx + 1}. [${d.title || `Deal #${d.id}`}](${d.url})`);
-    if (priceInfo) lines.push(`- **Preis:** ${priceInfo}`);
-    if (metaParts.length) lines.push(`- **Details:** ${metaParts.join(' · ')}`);
-    lines.push(`- **Kommentare:** 0 (Listing-Export ohne Kommentare)`);
-    if (d.descriptionHtml || d.description) {
-      lines.push('', htmlToMarkdown(d.descriptionHtml) || d.description);
+    // Preis: "549,00 €" oder "549,00 € (UVP: ~~899,00 €~~ · -39%)"
+    const eur = n => `${Number(n).toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €`;
+    const basePrice = d.displayPrice || (d.price != null ? eur(d.price) : null);
+    if (basePrice) {
+      const uvp = d.originalPrice != null
+        ? ` (UVP: ~~${eur(d.originalPrice)}~~${d.discountPct != null ? ` · -${d.discountPct}%` : ''})`
+        : '';
+      lines.push(`- **Preis:** ${basePrice}${uvp}`);
     }
+
+    if (d.merchant) lines.push(`- **Händler:** ${d.merchant}`);
+    if (d.voucherCode) lines.push(`- **Gutscheincode:** ${d.voucherCode}`);
+
+    if (d.shippingFree) lines.push('- **Versand:** Kostenlos');
+    else if (d.shipping != null) lines.push(`- **Versand:** ${d.shipping} €`);
+
+    if (d.temperature != null) {
+      const level = d.temperatureLevel ? ` (${d.temperatureLevel})` : '';
+      lines.push(`- **Temperatur:** 🔥 ${Math.round(d.temperature)}°${level}`);
+    }
+
+    if (d.group) lines.push(`- **Gruppe:** ${d.group}`);
+    if (d.author) lines.push(`- **Ersteller:** @${d.author}`);
+    lines.push(d.isExpired ? '- **Status:** ❌ Abgelaufen' : '- **Status:** ✅ Aktiv');
+    lines.push(`- **Deal-Link:** ${d.url || `https://www.mydealz.de/deals/${d.id}`}`);
+
+    const merchantLink = d.outboundLink || d.shareLink;
+    if (merchantLink) lines.push(`- **Händler-Link:** ${merchantLink}`);
+
+    lines.push('', '### Beschreibung:');
+    const body = (htmlToMarkdown(d.descriptionHtml) || d.description || '').trim();
+    if (body) lines.push('', body);
     lines.push('', '---', '');
   });
 
