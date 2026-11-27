@@ -397,6 +397,7 @@ function compactTime(t) {
     .replace(/Minuten?|Min\.?/gi, 'm')
     .replace(/Sekunden?|Sek\.?/gi, 's')
     .replace(/Tagen?|Tage?/gi, 'd')
+    .replace(/(\d+)\s+([hmsd])/g, '$1$2')
     .replace(/\s+/g, ' ')
     .trim();
 }
@@ -482,13 +483,13 @@ function buildMarkdown() {
 
   const links = collectLinks();
   if (links.length) {
-    lines.push(`### 🔗 Links (${links.length})`, '');
+    lines.push('', `### 🔗 Links (${links.length})`, '');
     links.forEach(l => lines.push(`- @${mdCell(l.author || '?')}: [${mdInline(l.text || l.url).slice(0, 100)}](${l.url})`));
     lines.push('');
   }
 
   // Deal-Scan als autoritativer Zahlen-Block
-  lines.push('## Deal-Scan', '');
+  lines.push('', '## Deal-Scan', '');
   lines.push(`- **Diskussion:** ${s.totalTopLevel ?? 0} Top-Level · ${s.totalRepliesVisible ?? 0} Replies · Max-Tiefe: ${s.maxLevel || 0}`);
   lines.push(`- **Akteure:** ${s.authorCommentCount || 0} Beiträge vom Dealersteller [OP]`);
   lines.push(`- **Reaktionen gesamt:** 👍 ${r.like || 0} · 💡 ${r.helpful || 0} · 😄 ${r.funny || 0}`);
@@ -497,7 +498,7 @@ function buildMarkdown() {
 
   const updates = authorUpdates();
   if (updates.length) {
-    lines.push(`### 📌 Updates vom Dealersteller (${updates.length})`, '');
+    lines.push('', `### 📌 Updates vom Dealersteller (${updates.length})`, '');
     updates.forEach(c => {
       const seq = seqMap.get(String(c.id)) || c.id;
       const ctx = c.level > 0 ? ` · Antwort auf [#${seqMap.get(String(c.parentId)) || c.parentId}]` : '';
@@ -507,12 +508,12 @@ function buildMarkdown() {
   }
 
   // Kommentare: Adaptiver Index (nur bei >25 Kommentaren), danach H3/H4-Hierarchie
-  lines.push('## Kommentare', '');
+  lines.push('', '## Kommentare', '');
   const allCount = (comments || []).length;
   const topLevels = (comments || []).filter(c => !c.level || c.level === 0);
 
   if (allCount > 25 && topLevels.length) {
-    lines.push('| ID | Autor | Reaktionen | Replies | Einstieg / Thema |');
+    lines.push('', '| ID | Autor | Reaktionen | Replies | Einstieg / Thema |');
     lines.push('| :--- | :--- | :--- | :--- | :--- |');
     for (const c of topLevels) {
       const seq = seqMap.get(String(c.id)) || c.id;
@@ -533,20 +534,23 @@ function buildMarkdown() {
     const relTime = compactTime(c.date);
 
     if (d === 0) {
-      lines.push(`### #${seq} @${mdCell(c.author || '?')}${opTag} · ${relTime}${rxStr}${editedTag}`);
+      lines.push('', `### #${seq} @${mdCell(c.author || '?')}${opTag} · ${relTime}${rxStr}${editedTag}`, '');
     } else {
-      lines.push(`#### #${seq} @${mdCell(c.author || '?')}${opTag} (↳ #${parentSeq}) · ${relTime}${rxStr}${editedTag}`);
+      lines.push('', `#### #${seq} @${mdCell(c.author || '?')}${opTag} (↳ #${parentSeq}) · ${relTime}${rxStr}${editedTag}`, '');
     }
-    lines.push('');
     lines.push(c.text ? c.text.trim() : '*(geloescht)*');
-    if (c._hiddenReplies) lines.push(`\n*(+${c._hiddenReplies} verborgen)*`);
+    if (c._hiddenReplies) lines.push('', `*(+${c._hiddenReplies} verborgen)*`);
     lines.push('');
 
     (c.replies || []).forEach(r2 => walk(r2, d + 1));
   };
 
   (comments || []).forEach(c => walk(c, 0));
-  return lines.filter(Boolean).join('\n');
+  return lines
+    .filter(l => typeof l === 'string')
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim() + '\n';
 }
 
 function download(content, name, type) {
