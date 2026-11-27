@@ -42,7 +42,7 @@
     }
   },
   "web_accessible_resources": [{
-    "resources": ["ui/dashboard.html", "ui/dashboard.js"],
+    "resources": ["ui/dashboard.html", "ui/dashboard.js", "ui/ai-badge.svg"],
     "matches": ["<all_urls>"]
   }]
 }

@@ -13,6 +13,7 @@ body{margin:0;background:var(--bg);color:var(--text);font:15px/1.6 'Inter',syste
 .cockpit-header{display:flex;align-items:flex-start;gap:12px}
 .cockpit-header .brand{display:flex;align-items:center;gap:8px;font-size:12px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);margin-bottom:10px}
 .cockpit-header .brand img{height:22px;width:22px;border-radius:6px}
+.ai-badge-inline { height: 1.15em; width: 1.15em; vertical-align: -0.16em; display: inline-block; }
 #meta-section{flex:1;min-width:0}
 .meta-title{margin:0 0 8px;font-size:18px;font-weight:700;line-height:1.35}
 .meta-facts{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px}
@@ -63,7 +64,7 @@ body.mde-embedded .modal-close{display:inline-flex}
 <main class="cockpit">
   <header class="card cockpit-header">
     <div id="meta-section">
-      <div class="brand"><img src="icon48.png" alt=""> MyDealz AI Exporter</div>
+      <div class="brand"><img src="icon48.png" alt=""> MyDealz <img src="ai-badge.svg" class="ai-badge-inline" alt="AI"> Exporter</div>
       <div class="meta-title">Lade Deal…</div>
     </div>
     <button class="modal-close" id="mde-close-btn" type="button" title="Schließen (Esc)" aria-label="Dashboard schließen">✕</button>
