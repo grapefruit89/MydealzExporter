@@ -388,11 +388,46 @@ function mdInline(text) {
   return String(text ?? '').replace(/[\[\]]/g, '').replace(/\|/g, '\\|').replace(/\s*\n+\s*/g, ' ').trim();
 }
 
+function compactTime(t) {
+  if (!t) return '?';
+  return String(t)
+    .replace(/^vor\s+/i, '')
+    .replace(/,\s*/g, ' ')
+    .replace(/Stunden?|Std\.?/gi, 'h')
+    .replace(/Minuten?|Min\.?/gi, 'm')
+    .replace(/Sekunden?|Sek\.?/gi, 's')
+    .replace(/Tagen?|Tage?/gi, 'd')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function formatReactions(rx) {
+  rx = rx || {};
+  const parts = [];
+  if (rx.like > 0) parts.push(`👍 ${rx.like}`);
+  if (rx.helpful > 0) parts.push(`💡 ${rx.helpful}`);
+  if (rx.funny > 0) parts.push(`😄 ${rx.funny}`);
+  return parts.length ? ` · ${parts.join(' ')}` : '';
+}
+
+function formatDescription(desc) {
+  if (!desc) return '*(Keine Beschreibung vorhanden)*';
+  return String(desc)
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/p>/gi, '\n\n')
+    .replace(/<li[^>]*>/gi, '- ')
+    .replace(/<\/li>/gi, '\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/\r\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
 /* Vollständiger CommonMark-Export nach 4-teiliger Gliederung:
    0. YAML-Frontmatter (llm_guide, schema, sections)
    1. Deal-Kopf (H1 + 2-Spalten-Tabelle)
    2. Deal-Beschreibung (H2) + Deal-Scan (H2)
-   3. Kommentare (H2) mit Index-Tabelle + H3/H4-Hierarchie */
+   3. Kommentare (H2) mit adaptivem Index (>25 Komm.) + H3/H4-Hierarchie */
 function buildMarkdown() {
   const { meta, comments, stats } = deal;
   const s = stats || {};
@@ -400,6 +435,15 @@ function buildMarkdown() {
 
   const summaryText = `${meta.title || 'Deal'} für ${meta.price || 'k. A.'} bei ${meta.merchant || 'k. A.'} (${meta.temperature || 'k. A.'}, ${s.totalTopLevel || 0} Top-Level, ${s.authorCommentCount || 0} OP-Beiträge).`;
   const summaryJson = JSON.stringify(summaryText.slice(0, 200));
+
+  // Fortlaufende Kurz-IDs (#1..#N) für kompakte, lesbare Hierarchien
+  const seqMap = new Map();
+  let seqCount = 1;
+  const indexSeq = c => {
+    if (!seqMap.has(String(c.id))) seqMap.set(String(c.id), seqCount++);
+    (c.replies || []).forEach(indexSeq);
+  };
+  (comments || []).forEach(indexSeq);
 
   const lines = [
     '---',
@@ -414,7 +458,7 @@ function buildMarkdown() {
     '  Auftrag: Pruefe Preis-Leistung vs. UVP, Haendler-Seriositaet und gewichte helpful hoeher als funny.',
     '---',
     '',
-    `# ${mdCell(meta.title || 'Deal')}`,
+    `# ${String(meta.title || 'Deal').replace(/\s*\n+\s*/g, ' ').trim()}`,
     '',
     '| Feld | Wert |',
     '| :--- | :--- |',
@@ -432,7 +476,7 @@ function buildMarkdown() {
       : []),
     '## Deal-Beschreibung',
     '',
-    meta.description ? meta.description.trim() : '*(Keine Beschreibung vorhanden)*',
+    formatDescription(meta.description),
     ''
   ];
 
@@ -455,39 +499,43 @@ function buildMarkdown() {
   if (updates.length) {
     lines.push(`### 📌 Updates vom Dealersteller (${updates.length})`, '');
     updates.forEach(c => {
-      const ctx = c.level > 0 ? ` · Antwort auf [#${c.parentId || '?'}]` : '';
-      lines.push(`- **[#${c.id}]** (${c.date || '?'}${ctx}): ${mdInline(c.text || '(geloescht)')}`);
+      const seq = seqMap.get(String(c.id)) || c.id;
+      const ctx = c.level > 0 ? ` · Antwort auf [#${seqMap.get(String(c.parentId)) || c.parentId}]` : '';
+      lines.push(`- **[#${seq}]** (${compactTime(c.date)}${ctx}): ${mdInline(c.text || '(geloescht)')}`);
     });
     lines.push('');
   }
 
-  // Kommentare: Zuerst Schnell-Index der Top-Level-Stränge, danach H3/H4-Hierarchie
+  // Kommentare: Adaptiver Index (nur bei >25 Kommentaren), danach H3/H4-Hierarchie
   lines.push('## Kommentare', '');
+  const allCount = (comments || []).length;
   const topLevels = (comments || []).filter(c => !c.level || c.level === 0);
 
-  if (topLevels.length) {
+  if (allCount > 25 && topLevels.length) {
     lines.push('| ID | Autor | Reaktionen | Replies | Einstieg / Thema |');
     lines.push('| :--- | :--- | :--- | :--- | :--- |');
     for (const c of topLevels) {
-      const rx = c.reactions || {};
-      const rxStr = `👍 ${rx.like || 0} · 💡 ${rx.helpful || 0} · 😄 ${rx.funny || 0}`;
+      const seq = seqMap.get(String(c.id)) || c.id;
+      const rxStr = formatReactions(c.reactions).replace(/^ · /, '') || '—';
       const preview = mdCell((c.text || '').slice(0, 60));
-      lines.push(`| \`#${c.id}\` | @${mdCell(c.author || '?')}${c.isAuthor ? ' **[OP]**' : ''} | ${rxStr} | ${c.replyCount || 0} | ${preview} |`);
+      lines.push(`| \`#${seq}\` | @${mdCell(c.author || '?')}${c.isAuthor ? ' **[OP]**' : ''} | ${rxStr} | ${c.replyCount || 0} | ${preview} |`);
     }
     lines.push('');
   }
 
   // Hierarchischer Kommentarbaum: H3 für Top-Level, H4 für alle Replies (Level 1–4)
   const walk = (c, d) => {
-    const rx = c.reactions || {};
-    const rxStr = `👍 ${rx.like || 0} 💡 ${rx.helpful || 0} 😄 ${rx.funny || 0}`;
+    const seq = seqMap.get(String(c.id)) || c.id;
+    const parentSeq = c.parentId ? (seqMap.get(String(c.parentId)) || c.parentId) : null;
+    const rxStr = formatReactions(c.reactions);
     const opTag = c.isAuthor ? ' [OP]' : '';
     const editedTag = c.wasEdited ? ' · [edited]' : '';
+    const relTime = compactTime(c.date);
 
     if (d === 0) {
-      lines.push(`### #${c.id} @${mdCell(c.author || '?')}${opTag} · ${c.date || '?'} · ${rxStr}${editedTag}`);
+      lines.push(`### #${seq} @${mdCell(c.author || '?')}${opTag} · ${relTime}${rxStr}${editedTag}`);
     } else {
-      lines.push(`#### #${c.id} @${mdCell(c.author || '?')}${opTag} (↳ #${c.parentId || '?'}) · ${c.date || '?'} · ${rxStr}${editedTag}`);
+      lines.push(`#### #${seq} @${mdCell(c.author || '?')}${opTag} (↳ #${parentSeq}) · ${relTime}${rxStr}${editedTag}`);
     }
     lines.push('');
     lines.push(c.text ? c.text.trim() : '*(geloescht)*');

@@ -65,6 +65,6 @@ Kein `npm run dev`, kein Testframework — es gibt keins und es wird keins einge
 ## 4. Definition of Done
 
 1. `node --check` grün, `manifest.json` valides JSON, Modul-Gate grün.
-2. Bei Verhaltensänderung: `version` in `manifest.json` erhöhen (aktuell `17.13`).
+2. Bei Verhaltensänderung: `version` in `manifest.json` erhöhen (aktuell `17.14`).
 3. Nur die von der Aufgabe genannten Dateien geändert; Doku-Aufträge fassen **keinen** Quellcode an.
 4. Doku-Fakten (GraphQL-Eigenheiten) gehören nach `docs/data_insights.md`, nicht in den Chat.

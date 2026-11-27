@@ -127,18 +127,18 @@ const LLM_GUIDE = {
   target: 'E-Commerce Deal & Community Thread Analysis',
   format: 'columnar-matrix [Deep Module]',
   anchors: ['[SSOT]', '[Separation of Concerns]', '[Deep Module]'],
-  description: 'Hocheffizienter Token-optimierter Columnar-Export für LLMs. Kommentare liegen als flache Tuple-Matrix ohne redundante Keys vor.',
+  description: 'Token-optimierter Columnar-Export fuer LLMs ohne redundante Keys.',
   columns: COLUMNAR_COLUMNS,
   column_guide: {
-    id: 'Eindeutige Kommentar-ID',
+    id: 'Kommentar-ID',
     parentId: 'Eltern-ID (null bei Top-Level)',
-    level: 'Hierarchie-Tiefe (0 = Wurzel, 1..4 = Antwort-Ebene)',
+    level: 'Hierarchie-Tiefe (0..4)',
     author: 'Verfasser',
-    isAuthor: 'true = Dealersteller (verbindliche Status-Meldungen zu Preis/Gutschein)',
+    isAuthor: 'true = Dealersteller (Updates zu Preis/Code)',
     date: 'Zeitstempel',
-    score: 'Gewichteter Community-Score (helpful*3 + replies*3 + like*2 + funny)',
-    rx: '[like, helpful, funny] Reaktionen getrennt für Signal-Filterung',
-    edited: 'true = Nachträglich bearbeitet (Korrekturen/Updates)',
+    score: 'Gewichteter Score (helpful*3 + replies*3 + like*2 + funny)',
+    rx: '[like, helpful, funny] Reaktionen getrennt',
+    edited: 'true = Bearbeitet',
     text: 'Kommentartext'
   }
 };
@@ -255,7 +255,13 @@ const GQL = {
       const inline = href && !/^(javascript:|data:)/i.test(href) ? ` [${label}](${href}) ` : ` [${label}] `;
       a.replaceWith(document.createTextNode(inline));
     }
-    return tmp.innerText.replace(/\n{3,}/g, '\n\n').trim();
+    for (const br of tmp.querySelectorAll('br')) br.replaceWith(document.createTextNode('\n'));
+    for (const p of tmp.querySelectorAll('p')) p.after(document.createTextNode('\n\n'));
+    for (const li of tmp.querySelectorAll('li')) {
+      li.prepend(document.createTextNode('- '));
+      li.after(document.createTextNode('\n'));
+    }
+    return tmp.innerText.replace(/\r\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
   },
 
   parseReactions(counts) {
@@ -556,7 +562,7 @@ function annotateAuthors(comments, meta) {
   /* GQL liefert userId nicht in jedem Pfad ⇒ fehlende IDs namensgleich auffüllen. */
   const idByName = new Map();
   for (const n of nodes) {
-    if (n.authorId != null && n.authorId !== '') n.authorId = String(n.authorId); // GQL-ID einheitlich
+    if (n.authorId != null && n.authorId !== '') n.authorId = String(n.authorId);
     if (n.author && n.authorId && !idByName.has(n.author)) idByName.set(n.author, n.authorId);
   }
   for (const n of nodes) {
