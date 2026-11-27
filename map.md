@@ -19,7 +19,7 @@ summary: "Kanonische LLM-Map: Inventar, Task-to-File-Matrix und Live-Fakten für
 | [`service-worker.js`](service-worker.js) | Einziger SW (Wurzel): Export-Payload (`STORE_EXPORT`) in `chrome.storage.session`; kein Tab-Open (25 Z.) |
 | [`content/content.js`](content/content.js) | UC2: Kommentar-Walker (`isReply`/`parentId`/`level`), Autor*in-Updates, Widget; `shared-bootstrap` (Links, `fetchWithRetry`) |
 | [`content/listing.js`](content/listing.js) | UC1: Listing-Widget, GQL-Chunking (30er), AJAX-+2-Seiten, Markdown; derselbe `shared-bootstrap`-Block |
-| [`ui/popup.html`](ui/popup.html) | Popup: Gemini-API-Key setzen; Script `dashboard.js` (`initPopupSettings`), kein `popup.js` |
+| [`ui/popup.html`](ui/popup.html) | Popup: KI-API-Key (Gemini/Groq/OpenAI) setzen; Script `dashboard.js` (`initPopupSettings`), kein `popup.js` |
 | [`ui/dashboard.html`](ui/dashboard.html) · [`ui/dashboard.js`](ui/dashboard.js) | Cockpit: Header, Deal-Scan, KI-Panel, 2×2-Export — einspaltig, max. 820 px, im In-Page-`<dialog>` (iframe) |
 | [`ui/icon16.png`](ui/icon16.png) · [`icon48`](ui/icon48.png) · [`icon128`](ui/icon128.png) | Icon-Satz 16/48/128 px (Manifest, Action, Cockpit-Header) |
 | [`docs/data_insights.md`](docs/data_insights.md) | GraphQL-Eigenheiten, Feld-Belege, Community-Techniken |
@@ -43,7 +43,7 @@ summary: "Kanonische LLM-Map: Inventar, Task-to-File-Matrix und Live-Fakten für
 | **Autor*in-Badge, Ersteller-Updates, User-Index** | `content/content.js` (`annotateAuthors`) | `ui/dashboard.js` (`buildMarkdown`, `buildAIContext`) |
 | **Cockpit-Rendering: Header, Deal-Scan, Export** | `ui/dashboard.js` (`renderMeta`, `renderStats`, `setupExport`) | `ui/dashboard.html` |
 | **Cockpit-Layout, CSS-Variablen, einspaltiges Grid** | `ui/dashboard.html` | — |
-| **KI-Prompts, Map-Reduce, On-Device/Cloud-Fallback** | `ui/dashboard.js` (`SYSTEM_PROMPT`, `PROMPTS`, `setupAI`, `runMapReduce`) | `docs/review_grok.md` §6 |
+| **KI-Prompts, Map-Reduce, Cloud-Provider (Groq/OpenAI/Gemini)** | `ui/dashboard.js` (`SYSTEM_PROMPT`, `PROMPTS`, `setupAI`, `runMapReduce`) | `docs/review_grok.md` §6 |
 | **JSON/Markdown/Clipboard-Export** | `ui/dashboard.js` (`setupExport`, `buildMarkdown`) | — |
 | **API-Key-Eingabe, Popup-UI** | `ui/popup.html` + `ui/dashboard.js` (`initPopupSettings`) | `ui/dashboard.js` (`callAI`-Key-Lookup) |
 | **Payload-Übergabe Content → Cockpit** | `service-worker.js` | `manifest.json` (`web_accessible_resources`) |
@@ -61,15 +61,15 @@ summary: "Kanonische LLM-Map: Inventar, Task-to-File-Matrix und Live-Fakten für
 | Schlüssel | Wert |
 | :--- | :--- |
 | **Stack** | Manifest V3, Vanilla JS, kein Build, kein Framework (Chromium 150+) |
-| **Version** | `17.10` in `manifest.json` — bei Verhaltensänderung erhöhen |
+| **Version** | `17.11` in `manifest.json` — bei Verhaltensänderung erhöhen |
 | **Permissions** | `storage`, `tabs`, `clipboardWrite`, `downloads` |
-| **Hosts** | `https://www.mydealz.de/*`, `https://generativelanguage.googleapis.com/*` |
+| **Hosts** | `https://www.mydealz.de/*`, `https://generativelanguage.googleapis.com/*`, `https://api.groq.com/*`, `https://api.openai.com/*`, `https://openrouter.ai/*` |
 | **Ordner** | `content/` · `ui/` · `tools/` · `docs/` — sonst nichts (Wurzel nur Manifest, SW, Doku-Einstiege) |
 | **Content-Script-Form** | Ein Bundle je Seitentyp (`content/content.js` Deal, `content/listing.js` Listing) inkl. `shared-bootstrap` |
 | **Modulgröße** | 15–40 KiB je Content-/UI-JS, `[anchor:deep-modules]` (Ousterhout); Gate `repo-map-check` |
 | **Autor*in-Quelle** | `isAuthor` = `userId`-Match → Username-Match → DOM-Badge `Autor*in` (kein GQL-Feld) |
 | **Payload-Transport** | `STORE_EXPORT` → `chrome.storage.session.pendingExport` → iframe liest via `GET_EXPORT_DATA` |
-| **KI-Kette** | On-Device (`LanguageModel`/`Summarizer`) → Gemini-Key → klarer Fehler |
+| **KI-Kette** | Groq (`gsk_` → `llama-3.3-70b-versatile`) / OpenAI (`sk-` → `gpt-4o-mini`) → Gemini (`AIza` → `gemini-2.5-flash`) → klarer Fehler; kein On-Device |
 | **Cockpit-Sektionen** | Header · Deal-Scan (7 Kennzahlen) · KI-Panel (6 Prompts + Freitext) · Export 2×2 |
 | **Bewusst entfernt** | Kommentar-Browser: Tabs, Sortierung, Suche, Link-/Autor-Listen, 2-Spalten-Split |
 | **Budget-Gate** | `node tools/repo-map-check.mjs` (AGENTS 70 / map 100 Z., 15–40 KiB, Bootstrap) |

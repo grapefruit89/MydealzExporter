@@ -34,8 +34,9 @@ Aufgabe: Untersuche Produktstärken/-schwächen, Händler-Seriosität, Fallstric
 -->`;
 
 /* Meta-System-Prompt (EN): Rollen- und Ausgabe-Invariante für beide KI-Pfade.
-   Wird als On-Device-Session-Prompt UND als Gemini-`systemInstruction` gesetzt;
-   die Antwort selbst bleibt deutsch (Output-Invariante im Prompt). */
+   Wird als `system`-Message (OpenAI-kompatibel) bzw. als Gemini-
+   `systemInstruction` gesetzt; die Antwort selbst bleibt deutsch
+   (Output-Invariante im Prompt). */
 const SYSTEM_PROMPT = `Act as an elite, objective e-commerce intelligence auditor specializing in deal evaluation and community sentiment analysis.
 You operate strictly under three architectural principles:
 1. [anchor:ssot-principle]: The Deal Header (title, verified price, merchant, voucher codes, creator notes) is the authoritative Ground Truth.
@@ -116,9 +117,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   setupAI();
 });
 
-/* ── Popup: Gemini-API-Key in chrome.storage.local ──
+/* ── Popup: KI-API-Key in chrome.storage.local ──
    Key nie loggen, nie exportieren, nur hier und in callAI() lesen.
-   Smart-Input: Einfügen/Tippen validiert live gegen die Models-API
+   Smart-Input: Präfix erkennt den Anbieter (gsk_ → Groq, AIza → Gemini,
+   sk- → OpenAI-kompatibel), validiert live gegen die Models-API
    (HTTP 200 = valide), speichert automatisch und zeigt danach nur die
    Maske. Leeres Feld entfernt den Key wieder. */
 function initPopupSettings() {
@@ -130,6 +132,21 @@ function initPopupSettings() {
 
   const MASK = '••••••••••••••••••••••••••••••••';
   const maskKey = k => MASK + String(k).slice(-6);
+  const LABELS = {
+    groq: '✅ Groq (Llama 3.3 70B)',
+    gemini: '✅ Google Gemini',
+    openai: '✅ OpenAI-kompatibel'
+  };
+  const FORMAT_HINT = '⚠️ Format unbekannt – AIza… (Gemini), gsk_… (Groq) oder sk-…';
+
+  /* Präfix entscheidet über Anbieter und Endpoint. */
+  const detectProvider = key => {
+    if (key.startsWith('gsk_')) return 'groq';
+    if (key.startsWith('AIza')) return 'gemini';
+    if (key.startsWith('sk-')) return 'openai';
+    return null;
+  };
+
   let currentKey = '';
   let seq = 0;        // entwertet veraltete Validierungen (Race-Schutz)
   let timer = null;   // Debounce fürs Tippen
@@ -162,22 +179,37 @@ function initPopupSettings() {
     try { keyInput.select(); } catch (_) { /* egal */ }
   };
 
+  /* Beide Schlüsselnamen werden gespiegelt, damit callAI() und ältere
+     Stände denselben Key finden. */
   const persist = key => new Promise(resolve => {
-    if (key) chrome.storage.local.set({ geminiApiKey: key }, resolve);
-    else chrome.storage.local.remove(['geminiApiKey'], resolve);
+    if (key) chrome.storage.local.set({ apiKey: key, geminiApiKey: key }, resolve);
+    else chrome.storage.local.remove(['apiKey', 'geminiApiKey'], resolve);
   });
 
   const validate = async key => {
+    const provider = detectProvider(key);
+    if (!provider) { setStatus(FORMAT_HINT, ''); return; }
+    // OpenAI-kompatible Keys haben keinen einheitlichen Prüf-Endpoint:
+    // Format genügt, die API meldet Fehler beim ersten Aufruf.
+    if (provider === 'openai') {
+      currentKey = key;
+      await persist(key);
+      setStatus(LABELS.openai, 'ok');
+      showMasked();
+      return;
+    }
     const mine = ++seq;
     setStatus('⏳ Prüfe Key…', 'busy');
     try {
-      const res = await fetch('https://generativelanguage.googleapis.com/v1beta/models?key=' + encodeURIComponent(key));
+      const res = provider === 'groq'
+        ? await fetch('https://api.groq.com/openai/v1/models', { headers: { Authorization: 'Bearer ' + key } })
+        : await fetch('https://generativelanguage.googleapis.com/v1beta/models?key=' + encodeURIComponent(key));
       if (mine !== seq) return;
       if (!res.ok) { setStatus(`❌ Ungültig (HTTP ${res.status})`, 'err'); return; }
       currentKey = key;
       await persist(key);
       if (mine !== seq) return;
-      setStatus('✅ Valide', 'ok');
+      setStatus(LABELS[provider], 'ok');
       showMasked();
     } catch (_) {
       if (mine !== seq) return;
@@ -205,14 +237,15 @@ function initPopupSettings() {
     const key = keyInput.value.trim();
     clearTimeout(timer);
     if (!key) { clearKey(); return; }
-    if (/^AIza/.test(key) && key.length >= 35) {
-      // Gültiges Gemini-Format: kurz sammeln (Tippen) bzw. sofort prüfen (Paste/Enter).
+    const provider = detectProvider(key);
+    if (provider) {
+      // Vollständige Paste-/Enter-Eingabe sofort prüfen, Tippen kurz sammeln.
       if (immediate) { validate(key); return; }
       setStatus('⏳ Prüfe Key…', 'busy');
       timer = setTimeout(() => validate(key), 450);
     } else {
       seq++;   // laufende Prüfung für den alten Wert verwerfen
-      setStatus('⚠️ Format unbekannt – Gemini-Keys beginnen mit „AIza“ (≥ 35 Zeichen).', '');
+      setStatus(FORMAT_HINT, '');
     }
   };
 
@@ -224,11 +257,12 @@ function initPopupSettings() {
   if (editBtn) editBtn.addEventListener('click', enterEdit);
   if (clearBtn) clearBtn.addEventListener('click', clearKey);
 
-  chrome.storage.local.get(['geminiApiKey'], r => {
-    const saved = String(r?.geminiApiKey || '').trim();
+  chrome.storage.local.get(['apiKey', 'geminiApiKey'], r => {
+    const saved = String(r?.geminiApiKey || r?.apiKey || '').trim();
     if (!saved) { setStatus('Kein Key gespeichert.', ''); return; }
     currentKey = saved;
-    setStatus('✅ Aktiv', 'ok');
+    const provider = detectProvider(saved);
+    setStatus(provider ? LABELS[provider] : '⚠️ Gespeichert (Format unbekannt)', provider ? 'ok' : '');
     showMasked();
   });
 }
@@ -395,7 +429,7 @@ function download(content, name, type) {
 // - Kommentare sortiert nach Score, abgeschnitten bei ~20k Zeichen (Nano-Limit)
 // - 300+ Kommentare → Map-Reduce (Batch-Zusammenfassungen)
 
-const CONTEXT_LIMIT = 20000; // Zeichen (~5k Tokens, konservativ für Gemini Nano)
+const CONTEXT_LIMIT = 20000; // Zeichen (~5k Tokens, konservativ für Cloud-Modelle)
 const PRICE_HINTS = ['preis', 'euro', 'kost', 'günstig', 'rabatt', 'prozent', 'discount', 'angebot', 'händler', 'merchant'];
 
 function needsComments(prompt) {
@@ -466,41 +500,61 @@ function buildAIContext(prompt = '') {
   return lines.join('\n');
 }
 
-// ── KI-Kette: On-Device → Gemini-Key → klarer Fehler ──────────────────────
+// ── KI-Kette: Groq/OpenAI (kompatibel) → Gemini → klarer Fehler ──────────
 async function callAI(prompt, ctx) {
-  if (typeof ai !== 'undefined') {
-    const model = ai.languageModel || ai.assistant;
-    if (model?.create) {
-      const session = await model.create({ systemPrompt: SYSTEM_PROMPT });
-      return await session.prompt(`${prompt}\n\n${ctx}`);
-    }
-  }
-  // API-Key aus storage.local (geminiApiKey aus Popup) mit Fallback auf storage.sync
-  const storageData = await new Promise(r => {
-    chrome.storage.local.get(['geminiApiKey', 'apiKey'], localRes => {
-      if (localRes?.geminiApiKey || localRes?.apiKey) return r(localRes);
-      chrome.storage.sync.get(['apiKey', 'geminiApiKey'], syncRes => r(syncRes || {}));
-    });
-  });
-  const apiKey = storageData?.geminiApiKey || storageData?.apiKey;
-  if (!apiKey) throw new Error('Kein API-Key hinterlegt und Chrome-AI nicht verfügbar.');
-  const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
-    {
+  const storageData = await chrome.storage.local.get(['apiKey', 'geminiApiKey']);
+  const apiKey = String(storageData?.apiKey || storageData?.geminiApiKey || '').trim();
+  if (!apiKey) throw new Error('Kein API-Key hinterlegt. Bitte Gemini- oder Groq-Key im Extension-Popup eintragen.');
+
+  // OpenAI-kompatibel: Groq (gsk_…) oder OpenAI (sk-…).
+  if (apiKey.startsWith('gsk_') || apiKey.startsWith('sk-')) {
+    const endpoint = apiKey.startsWith('gsk_')
+      ? 'https://api.groq.com/openai/v1/chat/completions'
+      : 'https://api.openai.com/v1/chat/completions';
+    const modelName = apiKey.startsWith('gsk_') ? 'llama-3.3-70b-versatile' : 'gpt-4o-mini';
+    const resp = await fetch(endpoint, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + apiKey },
       body: JSON.stringify({
-        systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
-        contents: [{ parts: [{ text: `${prompt}\n\n${ctx}` }] }]
+        model: modelName,
+        messages: [
+          { role: 'system', content: SYSTEM_PROMPT },
+          { role: 'user', content: prompt + '\n\n' + ctx }
+        ],
+        temperature: 0.3
       })
     });
-  if (!resp.ok) {
-    const errJson = await resp.json().catch(() => ({}));
-    throw new Error(errJson.error?.message || `Gemini API HTTP ${resp.status}`);
+    if (!resp.ok) {
+      const errJson = await resp.json().catch(() => ({}));
+      throw new Error(errJson.error?.message || `AI API HTTP ${resp.status}`);
+    }
+    const json = await resp.json();
+    const txt = json.choices?.[0]?.message?.content;
+    if (!txt) throw new Error(JSON.stringify(json));
+    return txt;
   }
-  const json = await resp.json();
-  const txt = json.candidates?.[0]?.content?.parts?.[0]?.text || json.error?.message;
-  if (!txt) throw new Error(JSON.stringify(json));
-  return txt;
+
+  if (apiKey.startsWith('AIza')) {
+    const resp = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=' + encodeURIComponent(apiKey),
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
+          contents: [{ parts: [{ text: `${prompt}\n\n${ctx}` }] }]
+        })
+      });
+    if (!resp.ok) {
+      const errJson = await resp.json().catch(() => ({}));
+      throw new Error(errJson.error?.message || `Gemini API HTTP ${resp.status}`);
+    }
+    const json = await resp.json();
+    const txt = json.candidates?.[0]?.content?.parts?.[0]?.text;
+    if (!txt) throw new Error(JSON.stringify(json));
+    return txt;
+  }
+
+  throw new Error('Unbekanntes Key-Format. Bitte Gemini- (AIza…), Groq- (gsk_…) oder OpenAI-Key (sk-…) im Extension-Popup eintragen.');
 }
 
 // ── Map-Reduce für 300+ Kommentar-Threads ──────────────────────────────────
