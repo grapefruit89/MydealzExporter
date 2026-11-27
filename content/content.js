@@ -734,11 +734,8 @@ function uiError(err) {
   return uiMsg;
 }
 
-/* Läuft gerade ein Sammelvorgang? Erster Klick im Countdown = Force-Retry
-   (FETCH_WAIT.skip). Buttons bleiben bewusst aktiv, sonst wäre der Klick tot. */
 let _collectBusy = false;
 
-/* Geplanter Button-Klick-Einstieg für beide Aktionen */
 function clickGate() {
   if (_collectBusy) {
     if (FETCH_WAIT.active) {
@@ -751,8 +748,6 @@ function clickGate() {
   return true;
 }
 
-/* Modaler Top-Layer-Dialog statt neuem Tab. Rollentrennung (AGENTS.md §1.4):
-   hier nur Rahmen/Backdrop/Close; UI + KI im iframe, Daten via Service Worker. */
 const MODAL_ID = 'mde-dashboard-modal';
 let _modalPrevOverflow = null;
 
@@ -861,6 +856,12 @@ function injectButton() {
     return b;
   };
 
+  // Hover-Farbe je Button (ein Aufruf statt zwei Listener-Paare pro Button).
+  const hover = (b, on, off) => {
+    b.addEventListener('mouseenter', () => b.style.background = on);
+    b.addEventListener('mouseleave', () => b.style.background = off);
+  };
+
   const btn = makeBtn('#16A34A', '#fff');
   btn.id = 'mde-ai-btn';
   btn.style.height = '48px';
@@ -869,8 +870,7 @@ function injectButton() {
   btn.style.boxShadow = '0 6px 22px rgba(22,163,74,.4)';
   const lbl = () => document.getElementById('mde-ai-label');
   btn.innerHTML = '🧠 <span id="mde-ai-label">Export &amp; Analyse</span>';
-  btn.addEventListener('mouseenter', () => btn.style.background = '#15803D');
-  btn.addEventListener('mouseleave', () => btn.style.background = '#16A34A');
+  hover(btn, '#15803D', '#16A34A');
   btn.addEventListener('click', async () => {
     const threadId = getThreadId();
     if (!threadId) { lbl().textContent = 'Kein Thread'; return; }
@@ -906,8 +906,7 @@ function injectButton() {
   expandBtn.title = 'Nur auf Klick: versteckte Antworten ausklappen (für Strg+F). Neue Seiten: erneut klicken.';
   const expLbl = () => document.getElementById('mde-expand-label');
   expandBtn.innerHTML = '💬 <span id="mde-expand-label">Antworten ausklappen</span>';
-  expandBtn.addEventListener('mouseenter', () => expandBtn.style.background = '#2a2d2f');
-  expandBtn.addEventListener('mouseleave', () => expandBtn.style.background = '#1d1f20');
+  hover(expandBtn, '#2a2d2f', '#1d1f20');
   expandBtn.addEventListener('click', async () => {
     expandBtn.disabled = true; expandBtn.style.opacity = '.7';
     try {
@@ -932,8 +931,7 @@ function injectButton() {
   dlBtn.id = 'mde-json-btn';
   dlBtn.title = 'Alle Kommentare (inkl. Replies, Links, Permalinks) direkt als JSON herunterladen';
   dlBtn.innerHTML = '💾 <span id="mde-json-label">JSON</span>';
-  dlBtn.addEventListener('mouseenter', () => dlBtn.style.background = '#2a2d2f');
-  dlBtn.addEventListener('mouseleave', () => dlBtn.style.background = '#1d1f20');
+  hover(dlBtn, '#2a2d2f', '#1d1f20');
   dlBtn.addEventListener('click', async () => {
     const threadId = getThreadId();
     if (!threadId) { document.getElementById('mde-json-label').textContent = 'Kein Thread'; return; }
@@ -944,8 +942,11 @@ function injectButton() {
     try {
       const payload = await collectExport(threadId, msg => { dlLbl().textContent = msg; });
 
-      const safeName = (payload.meta.title || 'thread').replace(/[^\w\s-]/g, '').replace(/\s+/g, '_').slice(0, 30);
-      const filename = `mydealz_${safeName}_${threadId}.json`;
+      const today = new Date().toISOString().slice(0, 10);
+      const slug = String(payload.meta?.title || 'deal').toLowerCase()
+        .replace(/ä/g, 'ae').replace(/ö/g, 'oe').replace(/ü/g, 'ue').replace(/ß/g, 'ss')
+        .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 35) || 'deal';
+      const filename = `${today}_mydealz-${slug}.json`;
 
       const blob = new Blob([payload.jsonString], { type: 'application/json;charset=utf-8' });
       const url = URL.createObjectURL(blob);

@@ -281,13 +281,13 @@ function collectLinks() {
   return out;
 }
 
-/* Lesbarer Dateiname: Umlaute ausschreiben, alles Nicht-Alphanumerische zu "_",
-   Titel auf 30 Zeichen kappen, Thread-ID als letzte Instanz anhängen. */
+/* Dateiname: <datum>_mydealz-<dealtitel>.json/.md — lowercase kebab-case,
+   Umlaute ausgeschrieben, Titel auf 35 Zeichen gekappt. */
 function dealBasename() {
-  const base = String(deal?.meta?.title || 'deal')
+  const cleanTitle = String(deal?.meta?.title || 'deal').toLowerCase()
     .replace(/ä/g, 'ae').replace(/ö/g, 'oe').replace(/ü/g, 'ue').replace(/ß/g, 'ss')
-    .replace(/[^A-Za-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 30) || 'deal';
-  return `mydealz_${base}${deal?.meta?.threadId ? '_' + deal.meta.threadId : ''}`;
+    .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 35) || 'deal';
+  return `${new Date().toISOString().slice(0, 10)}_mydealz-${cleanTitle}`;
 }
 
 function setupExport() {

@@ -766,17 +766,19 @@ function createWidget() {
         deals
       };
 
-      /* Dateiname aus dem Seitenkontext: Suche → Gruppe → Fallback "deals".
-         clean() entfernt Sonderzeichen, macht aus Trenner/Leerzeichen "_" und
-         kappt auf 30 Zeichen — lesbar und dateisystemtauglich. */
-      const clean = s => String(s || '')
-        .replace(/[^\w\s-]/g, '').replace(/[\s-]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 30);
+      /* Dateiname: <datum>_mydealz-<thema>[_p<von>-p<bis>]. Thema = Suchbegriff →
+         Gruppe → Fallback "deals". clean() = lowercase kebab-case, Umlaute
+         ausgeschrieben, auf 35 Zeichen gekappt — lesbar und dateisystemtauglich. */
+      const today = new Date().toISOString().slice(0, 10);
+      const clean = s => String(s || '').toLowerCase()
+        .replace(/ä/g, 'ae').replace(/ö/g, 'oe').replace(/ü/g, 'ue').replace(/ß/g, 'ss')
+        .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 35);
       const groupMatch = location.pathname.match(/\/(?:gruppe|group)\/([^/]+)/);
-      const contextName = query ? `suche_${clean(query)}`
-        : groupMatch ? `gruppe_${clean(decodeURIComponent(groupMatch[1]))}`
+      const topic = query ? clean(query)
+        : groupMatch ? clean(decodeURIComponent(groupMatch[1]))
         : 'deals';
-      const pageSuffix = pageFrom === pageTo ? `p${pageFrom}` : `p${pageFrom}-p${pageTo}`;
-      const baseName = `mydealz_${contextName}_${pageSuffix}`;
+      const pageSuffix = pageFrom === pageTo ? '' : `_p${pageFrom}-p${pageTo}`;
+      const baseName = `${today}_mydealz-${topic}${pageSuffix}`;
 
       if (format === 'json') {
         downloadFile(JSON.stringify(exportObj, null, 2), `${baseName}.json`, 'application/json;charset=utf-8');
