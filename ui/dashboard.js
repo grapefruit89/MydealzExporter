@@ -138,6 +138,7 @@ function initPopupSettings() {
     openai: '✅ OpenAI-kompatibel'
   };
   const FORMAT_HINT = '⚠️ Format unbekannt – AIza… (Gemini), gsk_… (Groq) oder sk-…';
+  const MIN_LEN = { groq: 20, gemini: 35, openai: 20 };
 
   /* Präfix entscheidet über Anbieter und Endpoint. */
   const detectProvider = key => {
@@ -150,6 +151,7 @@ function initPopupSettings() {
   let currentKey = '';
   let seq = 0;        // entwertet veraltete Validierungen (Race-Schutz)
   let timer = null;   // Debounce fürs Tippen
+  let pasted = false; // Paste prüft sofort, der input-Handler hält sich raus
 
   const setStatus = (text, cls) => {
     if (!statusEl) return;
@@ -239,17 +241,33 @@ function initPopupSettings() {
     if (!key) { clearKey(); return; }
     const provider = detectProvider(key);
     if (provider) {
-      // Vollständige Paste-/Enter-Eingabe sofort prüfen, Tippen kurz sammeln.
-      if (immediate) { validate(key); return; }
-      setStatus('⏳ Prüfe Key…', 'busy');
-      timer = setTimeout(() => validate(key), 450);
+      // Paste/Enter sofort prüfen; beim Tippen erst ab plausibler Länge
+      // (sonst würde ein halber Key gespeichert und maskiert).
+      if (immediate || key.length >= MIN_LEN[provider]) {
+        if (immediate) { validate(key); return; }
+        setStatus('⏳ Prüfe Key…', 'busy');
+        timer = setTimeout(() => validate(key), 450);
+      } else {
+        setStatus('⏳ Prüfe Key…', 'busy');
+      }
     } else {
       seq++;   // laufende Prüfung für den alten Wert verwerfen
       setStatus(FORMAT_HINT, '');
     }
   };
 
-  keyInput.addEventListener('input', () => handleInput(false));
+  keyInput.addEventListener('input', () => {
+    if (pasted) { pasted = false; return; }
+    handleInput(false);
+  });
+  keyInput.addEventListener('paste', () => {
+    // `paste` feuert vor dem Wert-Update — im nächsten Tick prüfen.
+    pasted = true;
+    setTimeout(() => {
+      const key = keyInput.value.trim();
+      if (key) validate(key);
+    }, 0);
+  });
   keyInput.addEventListener('keydown', e => {
     if (e.key === 'Enter') { e.preventDefault(); handleInput(true); }
   });
@@ -307,7 +325,10 @@ function renderStats() {
   ].join('');
 
   document.getElementById('stats-section').innerHTML = `<div class="stats-grid">${cards}</div>`
-    + (hidden > 0 ? `<p class="warn-note">⚠ ${hidden} Replies nicht abrufbar (mydealz API-Limit)</p>` : '');
+    + (hidden > 0 ? `<p class="warn-note">⚠ ${hidden} Replies nicht abrufbar (mydealz API-Limit)</p>` : '')
+    + (s.filteredNonsense || s.filterNote || (deal.meta?.commentCount && deal.meta.commentCount > total)
+      ? `<div class="filter-notice"><span>⚡</span><div><strong>Ratenlimit-Schutz aktiv:</strong> Inhaltslose Einzeiler (&lt; 50 Zeichen ohne Reaktionen) wurden automatisch gefiltert, um Server-Drosselungen zu verhindern und den Fokus auf relevante Beiträge zu legen.</div></div>`
+      : '');
 
   const titleEl = document.getElementById('scan-title');
   if (titleEl) {
@@ -356,6 +377,9 @@ function buildMarkdown() {
   const s = stats || {};
   const r = s.reactions || {};
   const lines = [
+    ...(s.filteredNonsense || s.filterNote
+      ? ['> ℹ️ **Ratenlimit-Schutz aktiv:** Inhaltslose Einzeiler (< 50 Zeichen ohne Reaktionen) wurden automatisch gefiltert.', '']
+      : []),
     MD_GUIDE,
     `# ${meta.title || 'Deal'}`,
     `**URL:** ${meta.url}`,

@@ -61,7 +61,7 @@ summary: "Kanonische LLM-Map: Inventar, Task-to-File-Matrix und Live-Fakten für
 | Schlüssel | Wert |
 | :--- | :--- |
 | **Stack** | Manifest V3, Vanilla JS, kein Build, kein Framework (Chromium 150+) |
-| **Version** | `17.11` in `manifest.json` — bei Verhaltensänderung erhöhen |
+| **Version** | `17.12` in `manifest.json` — bei Verhaltensänderung erhöhen |
 | **Permissions** | `storage`, `tabs`, `clipboardWrite`, `downloads` |
 | **Hosts** | `https://www.mydealz.de/*`, `https://generativelanguage.googleapis.com/*`, `https://api.groq.com/*`, `https://api.openai.com/*`, `https://openrouter.ai/*` |
 | **Ordner** | `content/` · `ui/` · `tools/` · `docs/` — sonst nichts (Wurzel nur Manifest, SW, Doku-Einstiege) |

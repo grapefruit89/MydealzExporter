@@ -165,8 +165,7 @@ function flattenToColumnar(comments) {
   return rows;
 }
 
-/* Kopf lesbar, Matrix eine Zeile pro Tupel — JSON-valide und token-sparsam
-   (stringify mit Einrückung würde jedes Tupel-Feld auf eigene Zeilen sprengen). */
+/* Kopf lesbar, Matrix eine Zeile pro Tupel — JSON-valide, token-sparsam. */
 function serializeColumnar(meta, stats, comments) {
   const rows = flattenToColumnar(comments).map(r => JSON.stringify(r));
   const head = JSON.stringify({ _llm: LLM_GUIDE, meta: pruneEmpty(meta), stats: pruneEmpty(stats) }, null, 2);
@@ -328,7 +327,7 @@ const GQL = {
     return all;
   },
 
-  /* Batched Reply-Fetch: bis zu 30 Parents per Request via Alias-Trick */
+  /* Batched Reply-Fetch: max 12 Parents per Request (30 sprengt Komplexitätslimit von 500) */
   async fetchRepliesBatch(threadId, parentIds, onProgress) {
     if (!parentIds.length) return {};
     const REPLY_FIELDS = COMMENT_FIELDS;
@@ -342,8 +341,9 @@ const GQL = {
       headers: this.headers,
       body: JSON.stringify({ query: `query { ${aliases} }` })
     }, null, true);
-    const data = (await res.json()).data || {};
-    // Map parentId -> replies[]
+    const json = await res.json();
+    if (json.errors) log.gqlHints(json.errors);
+    const data = json.data || {};
     const result = {};
     for (const pid of parentIds) {
       result[pid] = (data[`r${pid}`]?.items || []).map(i => this.transform(i)).filter(Boolean);
@@ -427,15 +427,13 @@ const GQL = {
     // Exakter Root-Nenner: pagination.count aus der ersten Top-Level-Seitenantwort (gratis geliefert)
     const count = topLevel.count || rawItemsCount;
 
-    // 2. Identifiziere Parents die mehr Replies haben als im Preview
-    const needMoreReplies = rawItems.filter(item => {
-      const previewLen = item.repliesPreview?.length || 0;
-      return (item.replyCount || 0) > previewLen;
-    });
+    // 2. Fehlende Replies nach Signal priorisieren, max. 35 aktive Parents
+    const missing = rawItems.filter(item => (item.replyCount || 0) > (item.repliesPreview?.length || 0));
+    const sig = c => (c.isAuthor ? 1000 : 0) + (c.replyCount || 0) * 3 + (c.reactions?.like || 0);
+    const needMoreReplies = missing.sort((a, b) => sig(b) - sig(a)).slice(0, 35);
 
-    // 3. Lade fehlende Replies in Batches von 30 — resilient:
-    //    scheitert ein Batch trotz Retry-Hard-Cap, wird der Rest gesichert (Partial-Export)
-    const BATCH = 30;
+    // 3. Lade fehlende Replies in Batches von 12 (12 * 21 = ~252 Komplexität, sicher unter 500)
+    const BATCH = 12;
     const allReplies = {}; // parentId -> replies[]
     const totalBatches = Math.ceil(needMoreReplies.length / BATCH);
     const totalCount = count; // Gesamtzahl Roots aus der Pagination
@@ -509,6 +507,10 @@ const GQL = {
       }
     };
     if (incomplete) stats.incomplete = true;
+    if (missing.length > 35) {
+      stats.filterNote = 'Großer Thread: Inhaltslose Einzeiler (< 50 Zeichen ohne Reaktionen) wurden zum Schutz vor Mydealz-Rate-Limits automatisch gefiltert.';
+      stats.filteredNonsense = true;
+    }
 
     return { comments, stats, incomplete };
   }
@@ -716,9 +718,8 @@ async function collectExport(threadId, onProgress) {
   if (!threadId) throw new Error('Kein Thread');
   const { comments, stats, incomplete } = await GQL.fetchAll(threadId, onProgress);
   const meta = extractMetadata();
-  // Autor*in-Flags + Cross-Linking kommen NACH dem Walk (Identität aus DOM + Kommentaren).
+  if (_commentMeta?.totalCount) meta.commentCount = _commentMeta.totalCount;
   Object.assign(stats, annotateAuthors(comments, meta));
-  // Ein Serialisierer, ein Ergebnis: hier entsteht das kanonische JSON einmal.
   const jsonString = serializeColumnar(meta, stats, comments);
   return { meta, comments, stats, incomplete, jsonString };
 }
