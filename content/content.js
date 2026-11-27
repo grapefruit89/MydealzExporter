@@ -119,8 +119,8 @@ async function fetchWithRetry(url, options = {}, onProgress, expectJson = false,
 }
 // #endregion shared-bootstrap
 
-/* ── LLM-Vertrag: Columnar-Tuple-Matrix (wortgleich in ui/dashboard.js) ──
-   Redundante Keys/Quotes/Klammern kosten ~60 % Kontext → flache Tupel-Matrix. */
+/* ── Columnar-Tuple-Matrix: einziger Serialisierer ([anchor:ssot-principle]).
+   ui/dashboard.js liest nur payload.jsonString. */
 const COLUMNAR_COLUMNS = ['id', 'parentId', 'level', 'author', 'isAuthor', 'date', 'score', 'text', 'authorRefs'];
 
 const LLM_GUIDE = {
@@ -711,15 +711,16 @@ function countHiddenReplies() {
   return { hidden, buttons };
 }
 
-/* Sammelt den kompletten Export-Satz (Meta + Kommentare + Stats) —
-   gemeinsamer Pfad für Dashboard-Export und Direkt-Download */
+/* Sammelt den Export-Satz (Meta + Kommentare + Stats) für Dashboard + Download */
 async function collectExport(threadId, onProgress) {
   if (!threadId) throw new Error('Kein Thread');
   const { comments, stats, incomplete } = await GQL.fetchAll(threadId, onProgress);
   const meta = extractMetadata();
   // Autor*in-Flags + Cross-Linking kommen NACH dem Walk (Identität aus DOM + Kommentaren).
   Object.assign(stats, annotateAuthors(comments, meta));
-  return { meta, comments, stats, incomplete };
+  // Ein Serialisierer, ein Ergebnis: hier entsteht das kanonische JSON einmal.
+  const jsonString = serializeColumnar(meta, stats, comments);
+  return { meta, comments, stats, incomplete, jsonString };
 }
 
 /* Fehler → kurz, nutzerlesbar */
@@ -947,7 +948,7 @@ function injectButton() {
         .replace(/[^\w\s-]/g, '').replace(/\s+/g, '_').slice(0, 40);
       const filename = `mydealz_kommentare_${safeName}.json`;
 
-      const blob = new Blob([serializeColumnar(payload.meta, payload.stats, payload.comments)], { type: 'application/json;charset=utf-8' });
+      const blob = new Blob([payload.jsonString], { type: 'application/json;charset=utf-8' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;

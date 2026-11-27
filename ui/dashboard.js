@@ -13,80 +13,11 @@
 
 let deal = null;
 
-/* ── LLM-Vertrag: Columnar-Tuple-Matrix (wortgleich in content/content.js) ──
-   Redundante Keys/Quotes/Klammern kosten ~60 % Kontext → flache Tupel-Matrix. */
-const COLUMNAR_COLUMNS = ['id', 'parentId', 'level', 'author', 'isAuthor', 'date', 'score', 'text', 'authorRefs'];
-
-const LLM_GUIDE = {
-  target: 'E-Commerce Deal & Community Thread Analysis',
-  format: 'columnar-matrix [anchor:deep-modules]',
-  anchors: ['[anchor:ssot-principle]', '[anchor:separation-of-concerns]', '[anchor:deep-modules]'],
-  description: 'Hocheffizienter Token-optimierter Columnar-Export für LLMs. Kommentare liegen als flache Tuple-Matrix ohne redundante Keys vor.',
-  columns: COLUMNAR_COLUMNS,
-  column_guide: {
-    id: 'Eindeutige Kommentar-ID',
-    parentId: 'Eltern-ID (null bei Top-Level)',
-    level: 'Hierarchie-Tiefe (0 = Wurzel, 1..4 = Antwort-Ebene)',
-    author: 'Verfasser',
-    isAuthor: 'true = Dealersteller (verbindliche Status-Meldungen zu Preis/Gutschein)',
-    date: 'Zeitstempel',
-    score: 'Gewichteter Community-Score (helpful*3 + replies*3 + like*2 + funny)',
-    text: 'Kommentartext',
-    authorRefs: 'Weitere Kommentar-IDs desselben Nutzers für sofortige Dialogverfolgung'
-  }
-};
-
-/* Kommentarbaum → flache Zeilen, pre-order (Eltern vor Kindern). */
-function flattenToColumnar(comments) {
-  const rows = [];
-  const walk = c => {
-    const rx = c.reactions || {};
-    const sc = (rx.helpful || 0) * 3 + (c.replyCount || 0) * 3 + (rx.like || 0) * 2 + (rx.funny || 0);
-    rows.push([
-      c.id,
-      c.parentId || null,
-      c.level || 0,
-      c.author,
-      Boolean(c.isAuthor),
-      c.date || '',
-      sc,
-      c.text || '',
-      c.authorRefs || []
-    ]);
-    (c.replies || []).forEach(walk);
-  };
-  (comments || []).forEach(walk);
-  return rows;
-}
-
-/* Kopf lesbar, Matrix eine Zeile pro Tupel — JSON-valide und token-sparsam
-   (stringify mit Einrückung würde jedes Tupel-Feld auf eigene Zeilen sprengen). */
-function serializeColumnar(meta, stats, comments) {
-  const rows = flattenToColumnar(comments).map(r => JSON.stringify(r));
-  const head = JSON.stringify({ _llm: LLM_GUIDE, meta: pruneEmpty(meta), stats: pruneEmpty(stats) }, null, 2);
-  return `${head.slice(0, -2)},\n  "comments": [\n    ${rows.join(',\n    ')}\n  ]\n}`;
-}
-
-function pruneEmpty(value) {
-  if (value === null || value === undefined) return undefined;
-  if (Array.isArray(value)) {
-    return value.map(pruneEmpty).filter(v => v !== undefined && !(Array.isArray(v) && !v.length));
-  }
-  if (typeof value === 'object') {
-    const out = {};
-    for (const [k, v] of Object.entries(value)) {
-      const p = pruneEmpty(v);
-      if (p === undefined || (Array.isArray(p) && !p.length)) continue;
-      out[k] = p;
-    }
-    return Object.keys(out).length ? out : undefined;
-  }
-  return value;
-}
-
-function exportJson() {
-  return serializeColumnar(deal.meta, deal.stats, deal.comments);
-}
+/* [anchor:ssot-principle] Das kanonische Columnar-JSON wird genau einmal in
+   content/content.js (collectExport → serializeColumnar) erzeugt und mit dem
+   Payload übertragen. Hier wird es nur noch gelesen — kein zweiter
+   Serialisierer, keine driftende Kopie von LLM_GUIDE/COLUMNAR_COLUMNS. */
+function exportJson() { return deal.jsonString || ''; }
 
 /* Markdown-Kopf: macht den Export ohne Begleitprompt lesbar (HTML-Kommentar,
    damit die gerenderte Ansicht sauber bleibt). */
